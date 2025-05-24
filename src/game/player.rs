@@ -9,7 +9,7 @@ pub struct Player {
     pub turret_rotation: [f32; 3],
     pub health: u32,
     pub connected: bool,
-    #[serde(skip)]
+    #[serde(skip, default = "Instant::now")]
     pub last_update: Instant,
 }
 

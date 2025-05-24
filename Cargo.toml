@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 tokio = { version = "1.0", features = ["full"] }
-axum = "0.7"
+axum = { version = "0.7", features = ["ws"] }
 tokio-tungstenite = "0.21"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
@@ -20,6 +20,8 @@ dashmap = "5.5"
 tokio-util = "0.7"
 rand = "0.8"
 
-[dependencies.axum]
-version = "0.7"
-features = ["ws"] 
+[dev-dependencies]
+tokio-test = "0.4"
+tempfile = "3.8"
+reqwest = { version = "0.11", features = ["json"] }
+fantoccini = "0.20" 

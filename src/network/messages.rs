@@ -80,6 +80,9 @@ pub enum ServerMessage {
         message: String,
         timestamp: u64,
     },
+    PlayerAssigned {
+        player_id: String,
+    },
     ServerInfo {
         message: String,
     },
@@ -119,18 +122,20 @@ impl ClientMessage {
 impl ServerMessage {
     /// Determine if this message should be sent as binary (MessagePack) or text (JSON)
     pub fn is_binary(&self) -> bool {
-        matches!(self,
-            ServerMessage::PlayerMoved { .. } |
-            ServerMessage::BulletSpawned { .. } |
-            ServerMessage::BulletDestroyed { .. } |
-            ServerMessage::BulletsUpdate { .. } |
-            ServerMessage::GameStateUpdate { .. } |
-            ServerMessage::PlayerJoined { .. } |
-            ServerMessage::PlayerLeft { .. } |
-            ServerMessage::BulletHitConfirmed { .. } |
-            ServerMessage::PlayerDestroyed { .. } |
-            ServerMessage::PlayerRespawned { .. }
-        )
+        // Temporarily disable all binary messages for debugging
+        false
+        
+        // Original binary messages (commented out for now):
+        // matches!(self,
+        //     ServerMessage::PlayerMoved { .. } |
+        //     ServerMessage::BulletSpawned { .. } |
+        //     ServerMessage::BulletDestroyed { .. } |
+        //     ServerMessage::BulletsUpdate { .. } |
+        //     ServerMessage::GameStateUpdate { .. } |
+        //     ServerMessage::BulletHitConfirmed { .. } |
+        //     ServerMessage::PlayerDestroyed { .. } |
+        //     ServerMessage::PlayerRespawned { .. }
+        // )
     }
     
     pub fn to_binary(&self) -> Result<Vec<u8>, rmp_serde::encode::Error> {

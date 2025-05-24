@@ -5,7 +5,7 @@ use tokio::sync::broadcast;
 use uuid::Uuid;
 
 use super::{Player, Bullet};
-use crate::network::messages::{GameMessage, ServerMessage};
+use crate::network::messages::ServerMessage;
 
 #[derive(Clone)]
 pub struct GameServer {
@@ -38,18 +38,9 @@ impl GameServer {
         let player = Player::new(player_id.clone());
         self.players.insert(player_id.clone(), player.clone());
         
-        // Broadcast player joined
+        // Broadcast player joined to ALL existing players (including the new one)
         let _ = self.broadcaster.send(ServerMessage::PlayerJoined {
             player: player.clone(),
-        });
-
-        // Send initial game state to new player
-        let players: Vec<Player> = self.players.iter().map(|p| p.value().clone()).collect();
-        let bullets: Vec<Bullet> = self.bullets.iter().map(|b| b.value().clone()).collect();
-        
-        let _ = self.broadcaster.send(ServerMessage::GameStateUpdate {
-            players,
-            bullets,
         });
 
         player
@@ -211,5 +202,16 @@ impl GameServer {
 
     pub fn subscribe(&self) -> broadcast::Receiver<ServerMessage> {
         self.broadcaster.subscribe()
+    }
+
+    // New method to get current game state for a new player
+    pub async fn get_initial_game_state(&self) -> ServerMessage {
+        let players: Vec<Player> = self.players.iter().map(|p| p.value().clone()).collect();
+        let bullets: Vec<Bullet> = self.bullets.iter().map(|b| b.value().clone()).collect();
+        
+        ServerMessage::GameStateUpdate {
+            players,
+            bullets,
+        }
     }
 } 

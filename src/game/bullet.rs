@@ -8,7 +8,7 @@ pub struct Bullet {
     pub player_id: String,
     pub position: [f32; 3],
     pub velocity: [f32; 3],
-    #[serde(skip)]
+    #[serde(skip, default = "Instant::now")]
     pub created_at: Instant,
 }
 

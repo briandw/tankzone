@@ -1,6 +1,5 @@
 use axum::extract::ws::{Message, WebSocket};
 use futures_util::{SinkExt, StreamExt};
-use tokio::sync::broadcast;
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
@@ -15,7 +14,25 @@ pub async fn handle_connection(socket: WebSocket, game_server: GameServer) {
     info!("Player connected: {}", player_id);
     
     // Add player to game
-    let _player = game_server.add_player(player_id.clone()).await;
+    let player = game_server.add_player(player_id.clone()).await;
+    
+    // Send initial game state directly to the new player (not broadcast)
+    let initial_state = game_server.get_initial_game_state().await;
+    if let Ok(state_json) = initial_state.to_json() {
+        if sender.send(Message::Text(state_json)).await.is_err() {
+            info!("Failed to send initial game state to player {}", player_id);
+        }
+    }
+    
+    // Send welcome message with player ID to the new player
+    let welcome_msg = ServerMessage::PlayerAssigned {
+        player_id: player_id.clone(),
+    };
+    if let Ok(welcome_json) = welcome_msg.to_json() {
+        if sender.send(Message::Text(welcome_json)).await.is_err() {
+            info!("Failed to send welcome message to player {}", player_id);
+        }
+    }
     
     // Subscribe to server broadcasts
     let mut broadcast_rx = game_server.subscribe();
@@ -69,9 +86,8 @@ pub async fn handle_connection(socket: WebSocket, game_server: GameServer) {
                     info!("Player {} disconnected (close frame)", receiver_player_id);
                     break;
                 }
-                Ok(Message::Ping(data)) => {
-                    // Respond to ping with pong
-                    // This is automatically handled by axum, but we could add custom logic here
+                Ok(Message::Ping(_)) => {
+                    // Respond to ping with pong (automatically handled by axum)
                     info!("Received ping from {}", receiver_player_id);
                 }
                 Ok(Message::Pong(_)) => {
@@ -137,10 +153,19 @@ async fn handle_text_message(
         ClientMessage::ChatMessage { message } => {
             game_server.handle_chat_message(player_id, message).await;
         }
+        ClientMessage::PlayerUpdate { position, rotation, turret_rotation } => {
+            // Handle PlayerUpdate in text handler (temporarily for debugging)
+            game_server.update_player(player_id, position, rotation, turret_rotation).await;
+        }
+        ClientMessage::BulletFired { position, velocity } => {
+            if let Some(bullet_id) = game_server.fire_bullet(player_id, position, velocity).await {
+                info!("Player {} fired bullet {}", player_id, bullet_id);
+            }
+        }
         ClientMessage::Ping => {
             // Send pong response
             let pong = ServerMessage::Pong;
-            if let Ok(json) = pong.to_json() {
+            if pong.to_json().is_ok() {
                 // Note: This is a simplified example. In practice, you'd need to send this back
                 // through the WebSocket sender, which would require more complex message routing.
                 info!("Received ping from {}, should send pong", player_id);
@@ -148,7 +173,7 @@ async fn handle_text_message(
         }
         // Handle other text messages or binary messages that were sent as text (shouldn't happen normally)
         _ => {
-            warn!("Received non-text message in text handler: {:?}", client_msg);
+            warn!("Received unexpected message in text handler: {:?}", client_msg);
         }
     }
     
