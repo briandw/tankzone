@@ -10,6 +10,7 @@ mod physics;
 mod ecs;
 mod game_state;
 mod network;
+mod state_sync;
 
 use server::GameServer;
 
@@ -36,7 +37,7 @@ async fn main() -> Result<()> {
     info!("Game configuration: {:?}", config.game);
 
     // Create and start the game server
-    let mut server = GameServer::new(config).await?;
+    let mut server = GameServer::from_config(config).await?;
     
     info!("Server starting on {}", server.address());
     

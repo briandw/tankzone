@@ -11,7 +11,7 @@ async fn test_server_health_check_simple() -> Result<()> {
     let mut config = Config::default();
     config.server.port = 9000; // Use port 9000 for this test
     
-    let mut server = GameServer::new(config.clone()).await?;
+    let mut server = GameServer::from_config(config.clone()).await?;
     
     // Start server in background
     let server_handle = tokio::spawn(async move {
@@ -53,7 +53,7 @@ async fn test_server_health_check_simple() -> Result<()> {
 #[tokio::test]
 async fn test_server_creation_and_health_info() -> Result<()> {
     let config = Config::default();
-    let server = GameServer::new(config.clone()).await?;
+    let server = GameServer::from_config(config.clone()).await?;
     
     // Test server creation
     assert_eq!(server.address(), "127.0.0.1:8080");

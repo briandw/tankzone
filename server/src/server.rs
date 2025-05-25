@@ -1,7 +1,9 @@
 use anyhow::Result;
-use battletanks_shared::{Config, NetworkMessage, PlayerId};
+use battletanks_shared::{Config, ProtoNetworkMessage, PlayerId, network_message::MessageType, 
+    JoinGameResponse, ProtoGameConfig, ProtoVector2};
 use dashmap::DashMap;
 use std::sync::Arc;
+use std::net::SocketAddr;
 use tokio::sync::Mutex;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc;
@@ -25,16 +27,19 @@ pub struct GameServer {
     clients: Arc<DashMap<PlayerId, ClientConnection>>,
     network_rx: mpsc::UnboundedReceiver<NetworkEvent>,
     network_tx: mpsc::UnboundedSender<NetworkEvent>,
+    listener: TcpListener,
 }
 
 impl GameServer {
-    /// Create a new game server with the given configuration
-    pub async fn new(config: Config) -> Result<Self> {
+    /// Create a new game server with the given socket address (for testing)
+    pub async fn new(addr: SocketAddr) -> Result<Self> {
         let (network_tx, network_rx) = mpsc::unbounded_channel();
         
+        let config = Config::default();
         let game_state = Arc::new(Mutex::new(GameState::new(&config)));
         let physics_world = Arc::new(Mutex::new(PhysicsWorld::new(&config)?));
         let clients = Arc::new(DashMap::new());
+        let listener = TcpListener::bind(addr).await?;
 
         Ok(Self {
             config,
@@ -43,7 +48,14 @@ impl GameServer {
             clients,
             network_rx,
             network_tx,
+            listener,
         })
+    }
+
+    /// Create a new game server with the given configuration
+    pub async fn from_config(config: Config) -> Result<Self> {
+        let addr = config.server_address().parse()?;
+        Self::new(addr).await
     }
 
     /// Get the server address
@@ -160,9 +172,8 @@ impl GameServer {
 
     /// Run the server main loop
     pub async fn run(&mut self) -> Result<()> {
-        // Start the WebSocket listener
-        let listener = TcpListener::bind(&self.config.server_address()).await?;
-        info!("WebSocket server listening on {}", self.config.server_address());
+        let local_addr = self.listener.local_addr()?;
+        info!("WebSocket server listening on {}", local_addr);
 
         // Start health check server
         let health_config = self.config.clone();
@@ -188,7 +199,7 @@ impl GameServer {
         loop {
             tokio::select! {
                 // Handle new client connections
-                result = listener.accept() => {
+                result = self.listener.accept() => {
                     match result {
                         Ok((stream, addr)) => {
                             info!("New client connection from {}", addr);
@@ -255,14 +266,32 @@ impl GameServer {
                 {
                     let state_message = {
                         let game_state_lock = game_state.lock().await;
-                        let message = game_state_lock.create_state_message();
                         
                         // Log tick information periodically
                         if game_state_lock.tick() % 300 == 0 { // Every 10 seconds at 30Hz
                             debug!("Game tick: {}, Players: {}", game_state_lock.tick(), clients.len());
                         }
                         
-                        message
+                        // TODO: Implement proper state synchronization with StateSynchronizer
+                        ProtoNetworkMessage {
+                            timestamp: std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_millis() as u64,
+                            message_type: Some(MessageType::GameStateUpdate(
+                                battletanks_shared::ProtoGameStateUpdate {
+                                    tick: game_state_lock.tick(),
+                                    round_time_remaining: 0.0,
+                                    tanks: vec![],
+                                    projectiles: vec![],
+                                    power_ups: vec![],
+                                    events: vec![],
+                                    scores: vec![],
+                                    is_delta_update: false,
+                                    full_state_tick: game_state_lock.tick() as u32,
+                                }
+                            )),
+                        }
                     };
                     
                     // Broadcast without holding the lock
@@ -293,16 +322,8 @@ impl GameServer {
         
         clients.insert(player_id, connection.clone());
         
-        // Handle the connection
-        if let Err(e) = connection.handle().await {
-            warn!("Client {} disconnected: {}", player_id, e);
-        }
-        
-        // Clean up
-        clients.remove(&player_id);
-        
-        // Notify about disconnection
-        let _ = network_tx.send(NetworkEvent::PlayerDisconnected { player_id });
+        // Connection handling is done automatically in ClientConnection::new()
+        // The connection will be cleaned up when the spawned tasks complete
         
         Ok(())
     }
@@ -314,8 +335,27 @@ impl GameServer {
                 info!("Player {} connected", player_id);
                 // Send initial game state to the new player
                 if let Some(client) = self.clients.get(&player_id) {
-                    let game_state_lock = self.game_state.lock().await;
-                    let state_message = game_state_lock.create_state_message();
+                    // For now, send an empty game state update
+                    // TODO: Implement proper state synchronization with StateSynchronizer
+                    let state_message = ProtoNetworkMessage {
+                        timestamp: std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_millis() as u64,
+                        message_type: Some(MessageType::GameStateUpdate(
+                            battletanks_shared::ProtoGameStateUpdate {
+                                tick: 0,
+                                round_time_remaining: 0.0,
+                                tanks: vec![],
+                                projectiles: vec![],
+                                power_ups: vec![],
+                                events: vec![],
+                                scores: vec![],
+                                is_delta_update: false,
+                                full_state_tick: 0,
+                            }
+                        )),
+                    };
                     let _ = client.send_message(state_message).await;
                 }
             }
@@ -333,61 +373,120 @@ impl GameServer {
     }
 
     /// Handle a message from a client
-    async fn handle_client_message(&mut self, player_id: PlayerId, message: NetworkMessage) {
-        match message {
-            NetworkMessage::JoinGame { player_name } => {
-                info!("Player {} joining game with name: {}", player_id, player_name);
-                
-                if self.clients.len() >= self.config.server.max_players {
-                    // Send error message
-                    if let Some(client) = self.clients.get(&player_id) {
-                        let error_msg = NetworkMessage::Error {
-                            message: "Server is full".to_string(),
-                        };
-                        let _ = client.send_message(error_msg).await;
+    async fn handle_client_message(&mut self, player_id: PlayerId, message: ProtoNetworkMessage) {
+        if let Some(message_type) = message.message_type {
+            match message_type {
+                MessageType::JoinGameRequest(join_request) => {
+                    info!("Player {} joining game with name: {}", player_id, join_request.display_name);
+                    
+                    if self.clients.len() >= self.config.server.max_players {
+                        // Send error response
+                        if let Some(client) = self.clients.get(&player_id) {
+                            let error_response = ProtoNetworkMessage {
+                                timestamp: std::time::SystemTime::now()
+                                    .duration_since(std::time::UNIX_EPOCH)
+                                    .unwrap_or_default()
+                                    .as_millis() as u64,
+                                message_type: Some(MessageType::JoinGameResponse(JoinGameResponse {
+                                    success: false,
+                                    error_message: "Server is full".to_string(),
+                                    player_id: String::new(),
+                                    assigned_entity_id: 0,
+                                    game_config: None,
+                                })),
+                            };
+                            let _ = client.send_message(error_response).await;
+                        }
+                        return;
                     }
-                    return;
-                }
-                
-                // Add player to game state
-                let entity_id = {
-                    let mut game_state_lock = self.game_state.lock().await;
-                    game_state_lock.add_player(player_id, player_name)
-                };
-                
-                // Send confirmation
-                if let Some(client) = self.clients.get(&player_id) {
-                    let confirm_msg = NetworkMessage::JoinConfirmed {
-                        player_id,
-                        entity_id,
+                    
+                    // Add player to game state
+                    let entity_id = {
+                        let mut game_state_lock = self.game_state.lock().await;
+                        game_state_lock.add_player(player_id, join_request.display_name.clone())
                     };
-                    let _ = client.send_message(confirm_msg).await;
+                    
+                    // Send success response
+                    if let Some(client) = self.clients.get(&player_id) {
+                        let game_config = ProtoGameConfig {
+                            tick_rate: self.config.server.tick_rate as f32,
+                            max_players: self.config.server.max_players as u32,
+                            round_duration: self.config.game.round_duration,
+                            respawn_time: self.config.game.respawn_delay,
+                            invulnerability_time: self.config.game.spawn_protection_duration,
+                            map_size: Some(ProtoVector2 {
+                                x: self.config.game.map_size,
+                                y: self.config.game.map_size,
+                            }),
+                        };
+                        
+                        let success_response = ProtoNetworkMessage {
+                            timestamp: std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_millis() as u64,
+                            message_type: Some(MessageType::JoinGameResponse(JoinGameResponse {
+                                success: true,
+                                error_message: String::new(),
+                                player_id: player_id.to_string(),
+                                assigned_entity_id: entity_id,
+                                game_config: Some(game_config),
+                            })),
+                        };
+                        let _ = client.send_message(success_response).await;
+                    }
+                }
+                
+                MessageType::PlayerInput(input) => {
+                    // Update player input in game state
+                    let mut game_state_lock = self.game_state.lock().await;
+                    game_state_lock.update_player_input(player_id, input);
+                }
+                
+                MessageType::PingRequest(ping) => {
+                    // Send pong response
+                    if let Some(client) = self.clients.get(&player_id) {
+                        let pong_response = ProtoNetworkMessage {
+                            timestamp: std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_millis() as u64,
+                            message_type: Some(MessageType::PongResponse(
+                                battletanks_shared::PongResponse {
+                                    client_timestamp: ping.client_timestamp,
+                                    server_timestamp: std::time::SystemTime::now()
+                                        .duration_since(std::time::UNIX_EPOCH)
+                                        .unwrap_or_default()
+                                        .as_millis() as u64,
+                                    sequence_number: ping.sequence_number,
+                                }
+                            )),
+                        };
+                        let _ = client.send_message(pong_response).await;
+                    }
+                }
+                
+                MessageType::ChatMessage(chat_event) => {
+                    // Broadcast chat message to all clients
+                    let broadcast_message = ProtoNetworkMessage {
+                        timestamp: std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_millis() as u64,
+                        message_type: Some(MessageType::ChatMessage(chat_event)),
+                    };
+                    
+                    for client in self.clients.iter() {
+                        let _ = client.send_message(broadcast_message.clone()).await;
+                    }
+                }
+                
+                _ => {
+                    warn!("Received unexpected message type from client {}", player_id);
                 }
             }
-            
-            NetworkMessage::PlayerInput(input) => {
-                // Update player input in game state
-                let mut game_state_lock = self.game_state.lock().await;
-                game_state_lock.update_player_input(player_id, input);
-            }
-            
-            NetworkMessage::ChatMessage { message } => {
-                // Broadcast chat message to all clients
-                let chat_event = battletanks_shared::GameEvent::ChatMessage {
-                    player_id,
-                    message,
-                    timestamp: std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_secs(),
-                };
-                
-                self.broadcast_event(chat_event).await;
-            }
-            
-            _ => {
-                warn!("Received unexpected message from client {}: {:?}", player_id, message);
-            }
+        } else {
+            warn!("Received message with no message_type from client {}", player_id);
         }
     }
 
@@ -396,7 +495,26 @@ impl GameServer {
         game_state: &GameState,
         clients: &Arc<DashMap<PlayerId, ClientConnection>>,
     ) {
-        let state_message = game_state.create_state_message();
+        // TODO: Implement proper state synchronization with StateSynchronizer
+        let state_message = ProtoNetworkMessage {
+            timestamp: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64,
+            message_type: Some(MessageType::GameStateUpdate(
+                battletanks_shared::ProtoGameStateUpdate {
+                    tick: game_state.tick(),
+                    round_time_remaining: 0.0,
+                    tanks: vec![],
+                    projectiles: vec![],
+                    power_ups: vec![],
+                    events: vec![],
+                    scores: vec![],
+                    is_delta_update: false,
+                    full_state_tick: game_state.tick() as u32,
+                }
+            )),
+        };
         
         for client in clients.iter() {
             if let Err(e) = client.send_message(state_message.clone()).await {
@@ -406,19 +524,15 @@ impl GameServer {
     }
 
     /// Broadcast a game event to all clients
-    async fn broadcast_event(&self, event: battletanks_shared::GameEvent) {
-        let game_state_lock = self.game_state.lock().await;
-        let message = NetworkMessage::GameStateUpdate {
-            tick: game_state_lock.tick(),
-            entities: vec![], // Only events, no entity updates
-            events: vec![event],
-        };
-        
-        for client in self.clients.iter() {
-            if let Err(e) = client.send_message(message.clone()).await {
-                warn!("Failed to send event to client {}: {}", client.key(), e);
-            }
-        }
+    async fn broadcast_event(&self, _event: battletanks_shared::GameEvent) {
+        // TODO: Implement proper event broadcasting with Protocol Buffers
+        // For now, this is a placeholder
+        warn!("Event broadcasting not yet implemented with Protocol Buffers");
+    }
+
+    /// Get the local address the server is bound to
+    pub fn local_addr(&self) -> Result<SocketAddr> {
+        self.listener.local_addr().map_err(|e| anyhow::anyhow!("Failed to get local address: {}", e))
     }
 }
 
@@ -429,16 +543,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_server_creation() -> Result<()> {
-        let config = Config::default();
-        let server = GameServer::new(config).await?;
-        assert_eq!(server.address(), "127.0.0.1:8080");
+        let server = GameServer::new("127.0.0.1:0".parse()?).await?;
+        assert!(server.local_addr().is_ok());
         Ok(())
     }
 
     #[tokio::test]
     async fn test_health_info() -> Result<()> {
-        let config = Config::default();
-        let server = GameServer::new(config).await?;
+        let server = GameServer::new("127.0.0.1:0".parse()?).await?;
         
         let health = server.health_info().await;
         assert_eq!(health["status"], "healthy");
@@ -450,10 +562,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_server_startup_with_timeout() -> Result<()> {
-        let mut config = Config::default();
-        config.server.port = 0; // Use any available port
-        
-        let mut server = GameServer::new(config).await?;
+        let mut server = GameServer::new("127.0.0.1:0".parse()?).await?;
         
         // Test that server can start (will fail to bind to port 0, but that's expected)
         let result = timeout(

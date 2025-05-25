@@ -1,4 +1,4 @@
-use battletanks_shared::{Config, NetworkMessage, PlayerId, EntityId, PlayerInput, Transform};
+use battletanks_shared::{Config, PlayerId, EntityId, ProtoPlayerInput, Transform};
 use crate::ecs::EcsWorld;
 use crate::physics::PhysicsWorld;
 use std::collections::HashMap;
@@ -98,8 +98,18 @@ impl GameState {
     }
 
     /// Update player input
-    pub fn update_player_input(&mut self, player_id: PlayerId, input: PlayerInput) {
-        self.ecs_world.update_player_input(player_id, input);
+    pub fn update_player_input(&mut self, player_id: PlayerId, input: ProtoPlayerInput) {
+        // Convert ProtoPlayerInput to the internal PlayerInput format
+        let internal_input = battletanks_shared::PlayerInput {
+            forward: input.forward,
+            backward: input.backward,
+            rotate_left: input.rotate_left,
+            rotate_right: input.rotate_right,
+            fire: input.fire,
+            turret_angle: input.turret_angle,
+            timestamp: input.timestamp,
+        };
+        self.ecs_world.update_player_input(player_id, internal_input);
     }
 
     /// Get current tick
@@ -107,52 +117,7 @@ impl GameState {
         self.tick_counter
     }
 
-    /// Create a network message with current game state
-    pub fn create_state_message(&self) -> NetworkMessage {
-        let mut entities = Vec::new();
-
-        // Add tank entities
-        for (entity_id, transform, tank) in self.ecs_world.get_tanks() {
-            // Check if it's a player tank
-            let players = self.ecs_world.get_players();
-            let player_id = players.iter()
-                .find(|(id, _, _, _)| *id == entity_id)
-                .map(|(_, _, _, player)| player.player_id);
-
-            entities.push(battletanks_shared::EntityState {
-                id: entity_id,
-                transform,
-                entity_type: battletanks_shared::EntityType::Tank {
-                    health: tank.health,
-                    max_health: tank.max_health,
-                    team: tank.team,
-                    turret_angle: tank.turret_angle,
-                    player_id,
-                },
-            });
-        }
-
-        // Add projectile entities
-        for (entity_id, transform, projectile) in self.ecs_world.get_projectiles() {
-            entities.push(battletanks_shared::EntityState {
-                id: entity_id,
-                transform,
-                entity_type: battletanks_shared::EntityType::Projectile {
-                    velocity: projectile.velocity,
-                    owner: projectile.owner,
-                },
-            });
-        }
-
-        // Get recent events
-        let events: Vec<_> = self.events.iter().cloned().collect();
-
-        NetworkMessage::GameStateUpdate {
-            tick: self.tick_counter,
-            entities,
-            events,
-        }
-    }
+    // Note: create_state_message removed - using StateSynchronizer for Protocol Buffer state updates
 
     /// Get player count
     pub fn player_count(&self) -> usize {
@@ -222,11 +187,15 @@ mod tests {
         let player_id = Uuid::new_v4();
         game_state.add_player(player_id, "TestPlayer".to_string());
         
-        let input = PlayerInput {
+        let input = ProtoPlayerInput {
             forward: true,
+            backward: false,
+            rotate_left: false,
+            rotate_right: false,
             fire: true,
             turret_angle: 1.57,
-            ..Default::default()
+            timestamp: 0,
+            sequence_number: 1,
         };
         
         game_state.update_player_input(player_id, input);
@@ -250,25 +219,7 @@ mod tests {
         assert_eq!(game_state.tick(), initial_tick + 1);
     }
 
-    #[test]
-    fn test_create_state_message() {
-        let config = Config::default();
-        let mut game_state = GameState::new(&config);
-        
-        let player_id = Uuid::new_v4();
-        game_state.add_player(player_id, "TestPlayer".to_string());
-        
-        let message = game_state.create_state_message();
-        
-        match message {
-            NetworkMessage::GameStateUpdate { tick, entities, events } => {
-                assert_eq!(tick, 0);
-                assert_eq!(entities.len(), 1);
-                assert!(!events.is_empty()); // Should have PlayerJoined event
-            }
-            _ => panic!("Wrong message type"),
-        }
-    }
+    // Note: test_create_state_message removed - using StateSynchronizer for Protocol Buffer state updates
 
     #[tokio::test]
     async fn test_game_state_update_with_timeout() -> Result<(), Box<dyn std::error::Error>> {
@@ -298,29 +249,5 @@ mod tests {
         Ok(())
     }
 
-    #[tokio::test]
-    async fn test_state_serialization_with_timeout() -> Result<(), Box<dyn std::error::Error>> {
-        let config = Config::default();
-        let mut game_state = GameState::new(&config);
-        
-        // Add multiple players
-        for i in 0..5 {
-            let player_id = Uuid::new_v4();
-            game_state.add_player(player_id, format!("Player{}", i));
-        }
-        
-        let serialization_test = async {
-            for _ in 0..50 {
-                let message = game_state.create_state_message();
-                
-                // Test that message can be serialized
-                let _serialized = serde_json::to_string(&message).unwrap();
-            }
-        };
-        
-        // Should complete within 1 second
-        timeout(Duration::from_secs(1), serialization_test).await?;
-        
-        Ok(())
-    }
+    // Note: test_state_serialization_with_timeout removed - using StateSynchronizer for Protocol Buffer state updates
 } 

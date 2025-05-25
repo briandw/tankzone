@@ -15,7 +15,7 @@ async fn test_server_health_check_with_timeout() -> Result<()> {
     let mut config = Config::default();
     config.server.port = 8090; // Use different port for testing
     
-    let mut server = GameServer::new(config.clone()).await?;
+    let mut server = GameServer::from_config(config.clone()).await?;
     
     // Start server in background
     let server_handle = tokio::spawn(async move {
@@ -65,7 +65,7 @@ async fn test_websocket_connection_with_timeout() -> Result<()> {
     let mut config = Config::default();
     config.server.port = 8091;
     
-    let mut server = GameServer::new(config.clone()).await?;
+    let mut server = GameServer::from_config(config.clone()).await?;
     
     // Start server in background
     let server_handle = tokio::spawn(async move {
@@ -122,7 +122,7 @@ async fn test_multiple_client_connections_with_timeout() -> Result<()> {
     config.server.port = 8092;
     config.server.max_players = 5;
     
-    let mut server = GameServer::new(config.clone()).await?;
+    let mut server = GameServer::from_config(config.clone()).await?;
     
     // Start server in background
     let server_handle = tokio::spawn(async move {
@@ -194,7 +194,7 @@ async fn test_server_performance_with_timeout() -> Result<()> {
     config.server.port = 8093;
     config.server.tick_rate = 30; // 30Hz
     
-    let mut server = GameServer::new(config.clone()).await?;
+    let mut server = GameServer::from_config(config.clone()).await?;
     
     // Start server in background
     let server_handle = tokio::spawn(async move {
@@ -242,7 +242,7 @@ async fn test_server_startup_shutdown_with_timeout() -> Result<()> {
         config.server.port = 8094;
         
         // Test server creation
-        let server = GameServer::new(config.clone()).await?;
+        let server = GameServer::from_config(config.clone()).await?;
         assert_eq!(server.address(), "127.0.0.1:8094");
         
         // Test health info
@@ -264,7 +264,7 @@ async fn test_invalid_websocket_message_with_timeout() -> Result<()> {
     let mut config = Config::default();
     config.server.port = 8095;
     
-    let mut server = GameServer::new(config.clone()).await?;
+    let mut server = GameServer::from_config(config.clone()).await?;
     
     // Start server in background
     let server_handle = tokio::spawn(async move {
@@ -312,7 +312,7 @@ async fn test_server_max_players_limit_with_timeout() -> Result<()> {
     config.server.port = 8096;
     config.server.max_players = 2; // Limit to 2 players
     
-    let mut server = GameServer::new(config.clone()).await?;
+    let mut server = GameServer::from_config(config.clone()).await?;
     
     // Start server in background
     let server_handle = tokio::spawn(async move {

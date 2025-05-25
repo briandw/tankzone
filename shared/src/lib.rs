@@ -27,5 +27,7 @@ pub use proto::{
     PongResponse,
     TeamColor,
     PowerUpType,
-    network_message::MessageType,
-}; 
+};
+
+// Re-export the nested module for MessageType
+pub use proto::network_message; 
