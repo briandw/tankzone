@@ -1,0 +1,33 @@
+{
+  "name": "battletanks-js-protobuf-tests",
+  "version": "1.0.0",
+  "description": "JavaScript Protocol Buffer integration tests for BattleTanks game server",
+  "main": "index.js",
+  "scripts": {
+    "install-deps": "npm install",
+    "generate-proto": "./scripts/generate-js-proto.sh",
+    "build": "npm run generate-proto",
+    "test-client": "node client/test-client.js",
+    "test-e2e": "make test-e2e"
+  },
+  "dependencies": {
+    "ws": "^8.14.2",
+    "protobufjs": "^7.2.5"
+  },
+  "devDependencies": {
+    "@types/node": "^20.8.0"
+  },
+  "keywords": [
+    "protobuf",
+    "websocket",
+    "rust",
+    "javascript",
+    "game-server",
+    "integration-test"
+  ],
+  "author": "BattleTanks Team",
+  "license": "MIT",
+  "engines": {
+    "node": ">=16.0.0"
+  }
+} 

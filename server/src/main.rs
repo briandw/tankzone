@@ -4,6 +4,7 @@ use anyhow::Result;
 use battletanks_shared::Config;
 use tracing::{info, error};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+use std::env;
 
 mod server;
 mod physics;
@@ -28,10 +29,24 @@ async fn main() -> Result<()> {
     info!("Starting Battle Tanks Server");
 
     // Load configuration
-    let config = Config::load().unwrap_or_else(|e| {
+    let mut config = Config::load().unwrap_or_else(|e| {
         error!("Failed to load config, using defaults: {}", e);
         Config::default()
     });
+
+    // Parse command line arguments
+    let args: Vec<String> = env::args().collect();
+    for i in 0..args.len() {
+        if args[i] == "--port" && i + 1 < args.len() {
+            if let Ok(port) = args[i + 1].parse::<u16>() {
+                config.server.port = port;
+                info!("Using port from command line: {}", port);
+            } else {
+                error!("Invalid port number: {}", args[i + 1]);
+                return Err(anyhow::anyhow!("Invalid port number"));
+            }
+        }
+    }
 
     info!("Server configuration: {:?}", config.server);
     info!("Game configuration: {:?}", config.game);

@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use config::{Config as ConfigBuilder, Environment, File};
+use std::env;
 
 /// Server configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -75,21 +75,28 @@ pub struct Config {
 }
 
 impl Config {
-    /// Load configuration from environment variables and config file
+    /// Load configuration from environment variables
     pub fn load() -> Result<Self, Box<dyn std::error::Error>> {
-        let mut config = ConfigBuilder::builder()
-            .add_source(Environment::with_prefix("BATTLETANKS"))
-            .add_source(File::with_name("config").required(false))
-            .build()?;
-
-        // Set defaults
-        let default_config = Self::default();
-        config = ConfigBuilder::builder()
-            .add_source(ConfigBuilder::try_from(&default_config)?)
-            .add_source(config)
-            .build()?;
-
-        Ok(config.try_deserialize()?)
+        dotenvy::dotenv().ok(); // Load .env file if it exists
+        
+        let mut config = Self::default();
+        
+        // Override with environment variables if present
+        if let Ok(port) = env::var("BATTLETANKS_SERVER_PORT") {
+            config.server.port = port.parse()?;
+        }
+        if let Ok(host) = env::var("BATTLETANKS_SERVER_HOST") {
+            config.server.host = host;
+        }
+        if let Ok(max_players) = env::var("BATTLETANKS_SERVER_MAX_PLAYERS") {
+            config.server.max_players = max_players.parse()?;
+        }
+        if let Ok(tick_rate) = env::var("BATTLETANKS_SERVER_TICK_RATE") {
+            config.server.tick_rate = tick_rate.parse()?;
+            config.server.physics_timestep = 1.0 / config.server.tick_rate as f32;
+        }
+        
+        Ok(config)
     }
 
     /// Get the server address as a string

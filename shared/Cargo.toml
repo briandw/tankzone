@@ -10,11 +10,9 @@ serde_json = { workspace = true }
 nalgebra = { workspace = true }
 uuid = { workspace = true }
 thiserror = { workspace = true }
-config = "0.14"
-
-# Protocol Buffers
-prost = "0.12"
-prost-types = "0.12"
+dotenvy = { workspace = true }
+prost = { workspace = true }
+prost-types = { workspace = true }
 
 [build-dependencies]
 prost-build = "0.12" 

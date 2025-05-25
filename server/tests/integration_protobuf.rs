@@ -126,6 +126,8 @@ async fn test_join_game_protobuf_flow() -> Result<()> {
     // Receive join game response
     let response = receive_protobuf_message(&mut ws).await?;
     
+    println!("Received message type: {:?}", response.message_type);
+    
     if let Some(MessageType::JoinGameResponse(join_response)) = response.message_type {
         assert!(join_response.success);
         assert!(!join_response.player_id.is_empty());
@@ -136,7 +138,7 @@ async fn test_join_game_protobuf_flow() -> Result<()> {
             assert!(config.max_players > 0);
         }
     } else {
-        panic!("Expected JoinGameResponse");
+        panic!("Expected JoinGameResponse, got: {:?}", response.message_type);
     }
 
     // Clean up
