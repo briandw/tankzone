@@ -1,0 +1,135 @@
+# Cursor Rules for Rust Development
+
+## General Rust Guidelines
+- Always use the latest stable Rust syntax and idioms
+- Prefer explicit error handling with `Result<T, E>` over panicking
+- Use `clippy` recommendations and fix all warnings
+- Follow Rust naming conventions (snake_case for functions/variables, PascalCase for types)
+- Prefer owned types over borrowed when the performance impact is negligible
+- Use `cargo fmt` for consistent formatting
+
+## Testing Guidelines
+
+### End-to-End Testing with Servers - CRITICAL TIMEOUT REQUIREMENTS
+When writing end-to-end tests that start servers or long-running processes:
+
+1. **ALWAYS include timeouts** - Tests must complete within a reasonable time frame
+2. **Use `tokio::time::timeout`** for async operations
+3. **Default timeout should be 30 seconds** unless there's a specific reason for longer
+4. **Server startup should timeout within 5 seconds**
+5. **Individual test operations should timeout within 10 seconds**
+
+#### Required Pattern for Server Tests:
+```rust
+use tokio::time::{timeout, Duration};
+use std::time::Duration as StdDuration;
+
+#[tokio::test]
+async fn test_server_endpoint() -> Result<(), Box<dyn std::error::Error>> {
+    // Server startup with timeout
+    let server_handle = timeout(
+        Duration::from_secs(5),
+        start_test_server()
+    ).await??;
+    
+    // Test operation with timeout
+    let result = timeout(
+        Duration::from_secs(10),
+        make_request_to_server()
+    ).await??;
+    
+    // Cleanup with timeout
+    timeout(
+        Duration::from_secs(5),
+        server_handle.shutdown()
+    ).await??;
+    
+    Ok(())
+}
+```
+
+#### For Synchronous Tests:
+```rust
+use std::time::{Duration, Instant};
+use std::thread;
+
+#[test]
+fn test_blocking_server() {
+    let start = Instant::now();
+    let timeout = Duration::from_secs(30);
+    
+    // Your test logic here
+    
+    assert!(start.elapsed() < timeout, "Test exceeded timeout");
+}
+```
+
+### Test Organization
+- Place integration tests in `tests/` directory
+- Use `#[cfg(test)]` for unit tests within modules
+- Name test functions descriptively: `test_when_condition_then_expected_outcome`
+- Group related tests in modules
+- Use `#[ignore]` for slow tests and run them separately
+
+### Mock and Test Utilities
+- Create test utilities in `tests/common/` directory
+- Use `mockall` for mocking external dependencies
+- Prefer dependency injection for testability
+- Create builder patterns for complex test data
+
+## Error Handling
+- Use `thiserror` for custom error types
+- Use `anyhow` for application-level error handling
+- Always provide context with `.context()` or `.with_context()`
+- Don't use `unwrap()` or `expect()` in production code
+- Use `?` operator for error propagation
+
+## Async Programming
+- Use `tokio` as the async runtime
+- Prefer `async/await` over manual `Future` implementations
+- Use `tokio::spawn` for concurrent tasks
+- Always handle `JoinHandle` results
+- Use `tokio::select!` for racing multiple futures
+
+## Performance Guidelines
+- Profile before optimizing
+- Use `cargo bench` for benchmarking
+- Prefer `Vec<T>` over `LinkedList<T>` unless you need frequent insertions
+- Use `String` for owned strings, `&str` for borrowed
+- Consider using `Cow<str>` when you might need either
+
+## Dependencies
+- Minimize dependencies and prefer standard library when possible
+- Pin major versions in `Cargo.toml`
+- Regularly update dependencies with `cargo update`
+- Use `cargo audit` to check for security vulnerabilities
+
+## Documentation
+- Write doc comments for all public APIs
+- Include examples in doc comments
+- Use `cargo doc --open` to verify documentation
+- Write README.md with clear setup and usage instructions
+
+## Security
+- Never commit secrets or API keys
+- Use environment variables for configuration
+- Validate all inputs, especially from external sources
+- Use `secrecy` crate for handling sensitive data
+
+## Specific Patterns to Avoid
+- Don't use `std::process::exit()` in library code
+- Avoid `println!` in library code (use `log` crate instead)
+- Don't use `unsafe` without thorough justification and documentation
+- Avoid deep nesting - prefer early returns and guard clauses
+
+## Code Organization
+- Keep functions under 50 lines when possible
+- Keep files under 500 lines - split into modules if larger
+- Use modules to organize related functionality
+- Prefer composition over inheritance (traits over struct embedding)
+
+## Git and Version Control
+- Write clear, descriptive commit messages
+- Use conventional commits format
+- Run `cargo test` and `cargo clippy` before committing
+- Use feature branches for new functionality 
