@@ -1,16 +1,20 @@
-use std::env;
+use std::io::Result;
 use std::path::PathBuf;
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let proto_file = "../proto/messages.proto";
-    let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
-
-    // Tell cargo to recompile if the proto file changes
-    println!("cargo:rerun-if-changed={}", proto_file);
-
-    prost_build::Config::new()
-        .out_dir(&out_dir)
-        .compile_protos(&[proto_file], &["../proto/"])?;
-
+fn main() -> Result<()> {
+    // Tell cargo to rerun this build script if the proto files change
+    println!("cargo:rerun-if-changed=../proto/");
+    
+    // Get the output directory
+    let out_dir = std::env::var("OUT_DIR").unwrap();
+    let out_path = PathBuf::from(&out_dir);
+    
+    // Configure prost_build
+    let mut config = prost_build::Config::new();
+    config.out_dir(&out_path);
+    
+    // Compile the protocol buffer files
+    config.compile_protos(&["../proto/messages.proto"], &["../proto/"])?;
+    
     Ok(())
-} 
+}

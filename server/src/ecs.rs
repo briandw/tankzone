@@ -1,10 +1,9 @@
-use anyhow::Result;
 use battletanks_shared::{Transform, Tank, Projectile, Obstacle, PlayerInput, PlayerId, EntityId};
-use hecs::{World, Entity, Query, With, Without};
+use hecs::{World, Entity};
 use nalgebra::Vector3;
 use rapier3d::prelude::RigidBodyHandle;
 use std::collections::HashMap;
-use tracing::{debug, warn};
+use tracing::warn;
 
 /// ECS world wrapper that manages entities and components
 pub struct EcsWorld {
@@ -40,6 +39,12 @@ pub enum NpcAiState {
     Patrol,
     Attacking,
     Searching,
+}
+
+impl Default for EcsWorld {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl EcsWorld {
@@ -293,14 +298,14 @@ impl EcsWorld {
             if input.rotate_left {
                 // Rotate around Y axis
                 let rotation_delta = tank.rotation_speed * delta_time;
-                new_transform.rotation = new_transform.rotation * nalgebra::UnitQuaternion::from_axis_angle(
+                new_transform.rotation *= nalgebra::UnitQuaternion::from_axis_angle(
                     &nalgebra::Vector3::y_axis(),
                     rotation_delta
                 );
             }
             if input.rotate_right {
                 let rotation_delta = -tank.rotation_speed * delta_time;
-                new_transform.rotation = new_transform.rotation * nalgebra::UnitQuaternion::from_axis_angle(
+                new_transform.rotation *= nalgebra::UnitQuaternion::from_axis_angle(
                     &nalgebra::Vector3::y_axis(),
                     rotation_delta
                 );
@@ -445,7 +450,7 @@ mod tests {
         let transform = Transform::default();
         let physics_handle = RigidBodyHandle::from_raw_parts(0, 0);
         
-        let entity_id = world.create_player_tank(
+        let _entity_id = world.create_player_tank(
             player_id,
             "TestPlayer".to_string(),
             transform,
@@ -462,8 +467,8 @@ mod tests {
         world.update_player_input(player_id, input);
         
         let players = world.get_players();
-        assert_eq!(players[0].3.input.forward, true);
-        assert_eq!(players[0].3.input.fire, true);
+        assert!(players[0].3.input.forward);
+        assert!(players[0].3.input.fire);
         assert!((players[0].3.input.turret_angle - 1.57).abs() < f32::EPSILON);
     }
 
@@ -474,7 +479,7 @@ mod tests {
         let transform = Transform::default();
         let physics_handle = RigidBodyHandle::from_raw_parts(0, 0);
         
-        let entity_id = world.create_player_tank(
+        let _entity_id = world.create_player_tank(
             player_id,
             "TestPlayer".to_string(),
             transform,
@@ -504,8 +509,10 @@ mod tests {
     fn test_projectile_system() {
         let mut world = EcsWorld::new();
         let transform = Transform::default();
-        let mut projectile = Projectile::default();
-        projectile.max_lifetime = 1.0; // 1 second lifetime
+        let projectile = Projectile {
+            max_lifetime: 1.0, // 1 second lifetime
+            ..Default::default()
+        };
         let physics_handle = RigidBodyHandle::from_raw_parts(0, 0);
         
         let entity_id = world.create_projectile(transform, projectile, physics_handle);
@@ -523,7 +530,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_ecs_performance_with_timeout() -> Result<()> {
+    async fn test_ecs_performance_with_timeout() -> Result<(), Box<dyn std::error::Error>> {
         let mut world = EcsWorld::new();
         
         // Create 50 tanks + 200 projectiles as specified in requirements
@@ -581,25 +588,25 @@ mod tests {
         
         // Create different types of entities
         let player_id = Uuid::new_v4();
-        let player_tank = world.create_player_tank(
+        let _player_tank = world.create_player_tank(
             player_id,
             "Player".to_string(),
             Transform::default(),
             RigidBodyHandle::from_raw_parts(0, 0),
         );
         
-        let npc_tank = world.create_npc_tank(
+        let _npc_tank = world.create_npc_tank(
             Transform::default(),
             RigidBodyHandle::from_raw_parts(1, 0),
         );
         
-        let projectile = world.create_projectile(
+        let _projectile = world.create_projectile(
             Transform::default(),
             Projectile::default(),
             RigidBodyHandle::from_raw_parts(2, 0),
         );
         
-        let obstacle = world.create_obstacle(
+        let _obstacle = world.create_obstacle(
             Transform::default(),
             Obstacle::default(),
             RigidBodyHandle::from_raw_parts(3, 0),
@@ -616,7 +623,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_entity_lifecycle_with_timeout() -> Result<()> {
+    async fn test_entity_lifecycle_with_timeout() -> Result<(), Box<dyn std::error::Error>> {
         let mut world = EcsWorld::new();
         
         let lifecycle_test = async {

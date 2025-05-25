@@ -1,9 +1,8 @@
 use anyhow::Result;
 use battletanks_shared::{Config, CollisionGroup};
-use nalgebra::{Vector3, Isometry3, Translation3, UnitQuaternion};
+use nalgebra::Vector3;
 use rapier3d::prelude::*;
 use std::collections::HashMap;
-use tracing::{debug, warn};
 
 /// Physics world wrapper that manages Rapier3D simulation
 pub struct PhysicsWorld {
@@ -171,7 +170,7 @@ impl PhysicsWorld {
     pub fn remove_body(&mut self, handle: RigidBodyHandle) {
         if let Some(body) = self.rigid_body_set.get(handle) {
             // Remove all colliders attached to this body
-            let colliders_to_remove: Vec<_> = body.colliders().iter().copied().collect();
+            let colliders_to_remove: Vec<_> = body.colliders().to_vec();
             for collider_handle in colliders_to_remove {
                 self.collider_set.remove(collider_handle, &mut self.island_manager, &mut self.rigid_body_set, true);
             }
@@ -192,7 +191,7 @@ impl PhysicsWorld {
 
     /// Get the position of a rigid body
     pub fn get_position(&self, handle: RigidBodyHandle) -> Option<Vector3<f32>> {
-        self.rigid_body_set.get(handle).map(|body| body.translation().clone())
+        self.rigid_body_set.get(handle).map(|body| *body.translation())
     }
 
     /// Set the position of a rigid body
@@ -304,7 +303,7 @@ mod tests {
         
         // Create tank and obstacle
         let tank_handle = world.create_tank(1, Vector3::new(0.0, 0.0, 0.0));
-        let obstacle_handle = world.create_obstacle(2, Vector3::new(5.0, 0.0, 0.0), Vector3::new(1.0, 1.0, 1.0));
+        let _obstacle_handle = world.create_obstacle(2, Vector3::new(5.0, 0.0, 0.0), Vector3::new(1.0, 1.0, 1.0));
         
         assert_eq!(world.body_count(), 2);
         

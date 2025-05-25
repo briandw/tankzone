@@ -85,19 +85,10 @@ impl Default for Projectile {
 }
 
 /// Obstacle component (static environment objects)
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Obstacle {
     pub destructible: bool,
     pub health: Option<u32>,
-}
-
-impl Default for Obstacle {
-    fn default() -> Self {
-        Self {
-            destructible: false,
-            health: None,
-        }
-    }
 }
 
 /// Player input state

@@ -36,7 +36,7 @@ impl ClientConnection {
         let (mut ws_sender, mut ws_receiver) = ws_stream.split();
 
         // Spawn task to handle outgoing messages
-        let sender_clone = Arc::clone(&sender);
+        let _sender_clone = Arc::clone(&sender);
         tokio::spawn(async move {
             let mut message_rx = message_rx;
             while let Some(message) = message_rx.recv().await {
@@ -83,7 +83,7 @@ impl ClientConnection {
                         debug!("Client {} sent close message", player_id);
                         break;
                     }
-                    Ok(Message::Ping(data)) => {
+                    Ok(Message::Ping(_data)) => {
                         // Echo pong back (handled automatically by tungstenite)
                         debug!("Received ping from client {}", player_id);
                     }
@@ -176,7 +176,7 @@ impl RateLimiter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::Instant;
+    
 
     #[test]
     fn test_rate_limiter() {

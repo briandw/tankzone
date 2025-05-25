@@ -6,10 +6,10 @@ use tokio::sync::Mutex;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc;
 use tokio::time::{interval, timeout, Duration};
-use tokio_tungstenite::{accept_async, tungstenite::Message, WebSocketStream};
+use tokio_tungstenite::accept_async;
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
-use hyper::{Body, Request, Response, Server, Method, StatusCode};
+use hyper::{Body, Response, Server, Method, StatusCode};
 use hyper::service::{make_service_fn, service_fn};
 use std::convert::Infallible;
 

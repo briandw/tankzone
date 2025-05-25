@@ -68,19 +68,10 @@ impl Default for GameConfig {
 }
 
 /// Combined configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Config {
     pub server: ServerConfig,
     pub game: GameConfig,
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            server: ServerConfig::default(),
-            game: GameConfig::default(),
-        }
-    }
 }
 
 impl Config {

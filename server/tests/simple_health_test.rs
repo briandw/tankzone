@@ -1,7 +1,6 @@
 use anyhow::Result;
 use battletanks_shared::Config;
 use battletanks_server::server::GameServer;
-use reqwest;
 use serde_json::Value;
 use std::time::Duration;
 use tokio::time::{timeout, sleep};

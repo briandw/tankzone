@@ -108,7 +108,7 @@ pub enum EntityType {
 mod tests {
     use super::*;
     use uuid::Uuid;
-    use nalgebra::Vector3;
+    
 
     #[test]
     fn test_game_event_serialization() {

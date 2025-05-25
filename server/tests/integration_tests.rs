@@ -1,13 +1,11 @@
 use anyhow::Result;
 use battletanks_shared::{Config, NetworkMessage};
-use reqwest;
 use serde_json::Value;
 use std::time::Duration;
 use tokio::time::{timeout, sleep};
 use tokio::net::TcpStream;
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 use futures_util::{SinkExt, StreamExt};
-use uuid::Uuid;
 
 // Import server modules
 use battletanks_server::server::GameServer;
@@ -141,7 +139,7 @@ async fn test_multiple_client_connections_with_timeout() -> Result<()> {
         // Connect 3 clients
         for i in 0..3 {
             let (ws_stream, _) = connect_async(&ws_url).await?;
-            let (mut ws_sender, mut ws_receiver) = ws_stream.split();
+            let (mut ws_sender, ws_receiver) = ws_stream.split();
             
             // Send join game message
             let join_message = NetworkMessage::JoinGame {
@@ -220,7 +218,7 @@ async fn test_server_performance_with_timeout() -> Result<()> {
             
             // Verify tick is increasing (server is running)
             let tick = health_data["tick"].as_u64().unwrap_or(0);
-            assert!(tick >= 0); // Tick should be non-negative
+            assert!(tick < u64::MAX); // Tick should be valid
             
             sleep(Duration::from_millis(100)).await;
         }
@@ -281,7 +279,7 @@ async fn test_invalid_websocket_message_with_timeout() -> Result<()> {
         
         // Connect to WebSocket
         let (ws_stream, _) = connect_async(&ws_url).await?;
-        let (mut ws_sender, mut ws_receiver) = ws_stream.split();
+        let (mut ws_sender, _ws_receiver) = ws_stream.split();
         
         // Send invalid JSON
         ws_sender.send(Message::Text("invalid json".to_string())).await?;
@@ -331,7 +329,7 @@ async fn test_server_max_players_limit_with_timeout() -> Result<()> {
         // Connect 3 clients (should exceed limit)
         for i in 0..3 {
             let (ws_stream, _) = connect_async(&ws_url).await?;
-            let (mut ws_sender, mut ws_receiver) = ws_stream.split();
+            let (mut ws_sender, _ws_receiver) = ws_stream.split();
             
             // Send join game message
             let join_message = NetworkMessage::JoinGame {
@@ -340,12 +338,12 @@ async fn test_server_max_players_limit_with_timeout() -> Result<()> {
             let join_json = serde_json::to_string(&join_message)?;
             ws_sender.send(Message::Text(join_json)).await?;
             
-            connections.push((ws_sender, ws_receiver));
+            connections.push((ws_sender, _ws_receiver));
         }
         
         // First 2 should succeed, 3rd should get error
         let mut successful_joins = 0;
-        let mut errors = 0;
+        let mut _errors = 0;
         
         for (_, mut receiver) in connections.into_iter() {
             if let Some(msg) = receiver.next().await {
@@ -357,7 +355,7 @@ async fn test_server_max_players_limit_with_timeout() -> Result<()> {
                             successful_joins += 1;
                         }
                         NetworkMessage::Error { .. } => {
-                            errors += 1;
+                            _errors += 1;
                         }
                         _ => {}
                     }

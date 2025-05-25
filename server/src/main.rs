@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use anyhow::Result;
 use battletanks_shared::Config;
 use tracing::{info, error};

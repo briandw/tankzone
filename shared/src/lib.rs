@@ -27,5 +27,5 @@ pub use proto::{
     PongResponse,
     TeamColor,
     PowerUpType,
-    MessageType,
+    network_message::MessageType,
 }; 

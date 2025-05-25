@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 pub mod ecs;
 pub mod game_state;
 pub mod network;

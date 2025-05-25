@@ -1,10 +1,9 @@
-use anyhow::Result;
 use battletanks_shared::{Config, NetworkMessage, PlayerId, EntityId, PlayerInput, Transform};
 use crate::ecs::EcsWorld;
 use crate::physics::PhysicsWorld;
 use std::collections::HashMap;
 use std::collections::VecDeque;
-use tracing::{debug, info};
+use tracing::info;
 
 /// Main game state that coordinates ECS and Physics
 pub struct GameState {
@@ -30,7 +29,7 @@ impl GameState {
     }
 
     /// Update the game state
-    pub fn update(&mut self, physics_world: &PhysicsWorld) {
+    pub fn update(&mut self, _physics_world: &PhysicsWorld) {
         self.tick_counter += 1;
         self.round_timer += self.config.server.physics_timestep;
 
@@ -122,7 +121,7 @@ impl GameState {
 
             entities.push(battletanks_shared::EntityState {
                 id: entity_id,
-                transform: transform,
+                transform,
                 entity_type: battletanks_shared::EntityType::Tank {
                     health: tank.health,
                     max_health: tank.max_health,
@@ -137,7 +136,7 @@ impl GameState {
         for (entity_id, transform, projectile) in self.ecs_world.get_projectiles() {
             entities.push(battletanks_shared::EntityState {
                 id: entity_id,
-                transform: transform,
+                transform,
                 entity_type: battletanks_shared::EntityType::Projectile {
                     velocity: projectile.velocity,
                     owner: projectile.owner,
@@ -234,8 +233,8 @@ mod tests {
         
         // Verify input was updated
         let players = game_state.ecs_world.get_players();
-        assert_eq!(players[0].3.input.forward, true);
-        assert_eq!(players[0].3.input.fire, true);
+        assert!(players[0].3.input.forward);
+        assert!(players[0].3.input.fire);
     }
 
     #[test]
@@ -272,7 +271,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_game_state_update_with_timeout() -> Result<()> {
+    async fn test_game_state_update_with_timeout() -> Result<(), Box<dyn std::error::Error>> {
         let config = Config::default();
         let mut game_state = GameState::new(&config);
         let physics_world = PhysicsWorld::new(&config)?;
@@ -300,7 +299,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_state_serialization_with_timeout() -> Result<()> {
+    async fn test_state_serialization_with_timeout() -> Result<(), Box<dyn std::error::Error>> {
         let config = Config::default();
         let mut game_state = GameState::new(&config);
         
