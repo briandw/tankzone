@@ -1,12 +1,36 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use crate::game::{Player, Bullet};
+use crate::game::{Player, Bullet, Enemy};
+
+/// Player input from client (used by physics engine)
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct PlayerInput {
+    pub forward: bool,
+    pub backward: bool,
+    pub strafe_left: bool,
+    pub strafe_right: bool,
+    pub mouse_x: f32,  // Camera yaw (turret horizontal aiming)
+    pub mouse_y: f32,  // Camera pitch (turret vertical aiming)
+}
 
 // Messages sent from client to server
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum ClientMessage {
-    // High-frequency messages (will be MessagePack binary)
+    // Command-based input messages
+    PlayerInput {
+        forward: bool,
+        backward: bool,
+        strafe_left: bool,
+        strafe_right: bool,
+        mouse_x: f32,  // Camera yaw
+        mouse_y: f32,  // Camera pitch
+    },
+    FireCommand {
+        // Server will calculate position and velocity based on player state
+    },
+    
+    // Legacy messages (will be deprecated)
     PlayerUpdate {
         position: [f32; 3],
         rotation: [f32; 3],
@@ -27,6 +51,24 @@ pub enum ClientMessage {
         message: String,
     },
     Ping,
+}
+
+impl From<ClientMessage> for PlayerInput {
+    fn from(msg: ClientMessage) -> Self {
+        match msg {
+            ClientMessage::PlayerInput { forward, backward, strafe_left, strafe_right, mouse_x, mouse_y } => {
+                PlayerInput {
+                    forward,
+                    backward,
+                    strafe_left,
+                    strafe_right,
+                    mouse_x,
+                    mouse_y,
+                }
+            },
+            _ => PlayerInput::default(),
+        }
+    }
 }
 
 // Messages sent from server to clients
@@ -50,10 +92,11 @@ pub enum ServerMessage {
         bullets: Vec<Bullet>,
     },
     
-    // Game state updates (MessagePack)
+    // Game state updates (MessagePack) - Physics-based
     GameStateUpdate {
         players: Vec<Player>,
-        bullets: Vec<Bullet>,
+        enemies: Vec<Enemy>,
+        // Note: bullets are handled by physics and sent separately
     },
     PlayerJoined {
         player: Player,
@@ -90,12 +133,34 @@ pub enum ServerMessage {
         message: String,
     },
     Pong,
+    
+    // Enemy messages
+    EnemySpawned {
+        enemy: Enemy,
+    },
+    EnemyMoved {
+        enemy_id: Uuid,
+        position: [f32; 3],
+        rotation: [f32; 3],
+    },
+    EnemyHit {
+        enemy_id: Uuid,
+        bullet_id: Uuid,
+        damage: u32,
+        new_health: u32,
+    },
+    EnemyDestroyed {
+        enemy_id: Uuid,
+        position: [f32; 3], // For explosion effect
+    },
 }
 
 impl ClientMessage {
     /// Determine if this message should be sent as binary (MessagePack) or text (JSON)
     pub fn is_binary(&self) -> bool {
         matches!(self, 
+            ClientMessage::PlayerInput { .. } |
+            ClientMessage::FireCommand { .. } |
             ClientMessage::PlayerUpdate { .. } |
             ClientMessage::BulletFired { .. } |
             ClientMessage::BulletHit { .. }

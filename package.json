@@ -1,21 +1,13 @@
 {
-  "name": "battlezone-multiplayer",
+  "name": "battlezone-tests",
   "version": "1.0.0",
-  "description": "Multiplayer 3D Tank Battle Zone game",
-  "main": "server.js",
+  "description": "Playwright tests for Battlezone tank game",
   "scripts": {
-    "start": "node server.js",
-    "dev": "nodemon server.js"
-  },
-  "dependencies": {
-    "express": "^4.18.2",
-    "socket.io": "^4.7.4",
-    "uuid": "^9.0.1"
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "test:ui": "playwright test --ui"
   },
   "devDependencies": {
-    "nodemon": "^3.0.2"
-  },
-  "keywords": ["game", "multiplayer", "3d", "tanks", "battlezone"],
-  "author": "",
-  "license": "MIT"
+    "@playwright/test": "^1.40.0"
+  }
 } 

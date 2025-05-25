@@ -1,179 +1,204 @@
-use axum::extract::ws::{Message, WebSocket};
+use axum::{
+    extract::{ws::{Message, WebSocket}, State, WebSocketUpgrade},
+    response::Response,
+};
 use futures_util::{SinkExt, StreamExt};
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
 use crate::game::GameServer;
-use super::messages::{ClientMessage, ServerMessage};
+use crate::network::messages::{ClientMessage, ServerMessage, PlayerInput};
 
-pub async fn handle_connection(socket: WebSocket, game_server: GameServer) {
+pub async fn websocket_handler(
+    ws: WebSocketUpgrade,
+    State(game_server): State<GameServer>,
+) -> Response {
+    ws.on_upgrade(|socket| handle_socket(socket, game_server))
+}
+
+async fn handle_socket(socket: WebSocket, game_server: GameServer) {
     let (mut sender, mut receiver) = socket.split();
     
-    // Generate player ID
+    // Generate unique player ID
     let player_id = Uuid::new_v4().to_string();
     info!("Player connected: {}", player_id);
     
-    // Add player to game
-    let player = game_server.add_player(player_id.clone()).await;
+    // Add player to the game
+    game_server.add_player(player_id.clone()).await;
     
-    // Send initial game state directly to the new player (not broadcast)
+    // Send initial state to the new player
     let initial_state = game_server.get_initial_game_state().await;
-    if let Ok(state_json) = initial_state.to_json() {
-        if sender.send(Message::Text(state_json)).await.is_err() {
-            info!("Failed to send initial game state to player {}", player_id);
+    if let Ok(data) = serde_json::to_string(&initial_state) {
+        if sender.send(Message::Text(data)).await.is_err() {
+            warn!("Failed to send initial state to player {}", player_id);
         }
     }
-    
-    // Send welcome message with player ID to the new player
-    let welcome_msg = ServerMessage::PlayerAssigned {
+
+    // Send player assignment message
+    let assignment_msg = ServerMessage::PlayerAssigned {
         player_id: player_id.clone(),
     };
-    if let Ok(welcome_json) = welcome_msg.to_json() {
-        if sender.send(Message::Text(welcome_json)).await.is_err() {
-            info!("Failed to send welcome message to player {}", player_id);
+    if let Ok(data) = serde_json::to_string(&assignment_msg) {
+        if sender.send(Message::Text(data)).await.is_err() {
+            warn!("Failed to send player assignment to player {}", player_id);
         }
     }
     
-    // Subscribe to server broadcasts
-    let mut broadcast_rx = game_server.subscribe();
+    // Subscribe to broadcast messages
+    let mut broadcast_rx = game_server.broadcaster.subscribe();
     
-    // Spawn task to handle outgoing messages
-    let sender_player_id = player_id.clone();
-    let sender_task = tokio::spawn(async move {
-        while let Ok(server_msg) = broadcast_rx.recv().await {
-            let message = if server_msg.is_binary() {
-                match server_msg.to_binary() {
-                    Ok(data) => Message::Binary(data),
-                    Err(e) => {
-                        error!("Failed to serialize binary message: {}", e);
-                        continue;
+    // Spawn task to handle broadcast messages
+    let sender_task = {
+        let player_id = player_id.clone();
+        tokio::spawn(async move {
+            while let Ok(msg) = broadcast_rx.recv().await {
+                let message_data = if msg.is_binary() {
+                    match msg.to_binary() {
+                        Ok(data) => Message::Binary(data),
+                        Err(e) => {
+                            error!("Failed to serialize message to binary: {}", e);
+                            continue;
+                        }
                     }
-                }
-            } else {
-                match server_msg.to_json() {
-                    Ok(json) => Message::Text(json),
-                    Err(e) => {
-                        error!("Failed to serialize JSON message: {}", e);
-                        continue;
+                } else {
+                    match msg.to_json() {
+                        Ok(data) => Message::Text(data),
+                        Err(e) => {
+                            error!("Failed to serialize message to JSON: {}", e);
+                            continue;
+                        }
                     }
+                };
+                
+                if sender.send(message_data).await.is_err() {
+                    info!("Player {} disconnected (sender)", player_id);
+                    break;
                 }
-            };
-            
-            if sender.send(message).await.is_err() {
-                info!("Player {} disconnected (sender)", sender_player_id);
-                break;
             }
-        }
-    });
+        })
+    };
     
     // Handle incoming messages
-    let receiver_player_id = player_id.clone();
-    let receiver_game_server = game_server.clone();
-    let receiver_task = tokio::spawn(async move {
-        while let Some(msg) = receiver.next().await {
-            match msg {
-                Ok(Message::Binary(data)) => {
-                    if let Err(e) = handle_binary_message(&data, &receiver_player_id, &receiver_game_server).await {
-                        warn!("Failed to handle binary message from {}: {}", receiver_player_id, e);
-                    }
-                }
-                Ok(Message::Text(text)) => {
-                    if let Err(e) = handle_text_message(&text, &receiver_player_id, &receiver_game_server).await {
-                        warn!("Failed to handle text message from {}: {}", receiver_player_id, e);
-                    }
-                }
-                Ok(Message::Close(_)) => {
-                    info!("Player {} disconnected (close frame)", receiver_player_id);
-                    break;
-                }
-                Ok(Message::Ping(_)) => {
-                    // Respond to ping with pong (automatically handled by axum)
-                    info!("Received ping from {}", receiver_player_id);
-                }
-                Ok(Message::Pong(_)) => {
-                    // Client responded to our ping
-                    info!("Received pong from {}", receiver_player_id);
-                }
-                Err(e) => {
-                    warn!("WebSocket error for player {}: {}", receiver_player_id, e);
-                    break;
+    while let Some(msg) = receiver.next().await {
+        match msg {
+            Ok(Message::Text(text)) => {
+                if let Err(e) = handle_text_message(&game_server, &player_id, &text).await {
+                    error!("Error handling text message: {}", e);
                 }
             }
+            Ok(Message::Binary(data)) => {
+                if let Err(e) = handle_binary_message(&game_server, &player_id, &data).await {
+                    error!("Error handling binary message: {}", e);
+                }
+            }
+            Ok(Message::Close(_)) => {
+                info!("Player {} disconnected (close frame)", player_id);
+                break;
+            }
+            Err(e) => {
+                error!("WebSocket error for player {}: {}", player_id, e);
+                break;
+            }
+            _ => {} // Ignore other message types
         }
-    });
-    
-    // Wait for either task to complete (indicating disconnection)
-    tokio::select! {
-        _ = sender_task => {},
-        _ = receiver_task => {},
     }
     
-    // Clean up: remove player from game
+    // Clean up when player disconnects
     game_server.remove_player(&player_id).await;
+    sender_task.abort();
     info!("Player {} cleanup completed", player_id);
 }
 
-async fn handle_binary_message(
-    data: &[u8], 
-    player_id: &str, 
-    game_server: &GameServer
+async fn handle_text_message(
+    game_server: &GameServer,
+    player_id: &str,
+    text: &str,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let client_msg = ClientMessage::from_binary(data)?;
+    let message: ClientMessage = serde_json::from_str(text)?;
     
-    match client_msg {
-        ClientMessage::PlayerUpdate { position, rotation, turret_rotation } => {
-            game_server.update_player(player_id, position, rotation, turret_rotation).await;
+    match message {
+        ClientMessage::PlayerInput { forward, backward, strafe_left, strafe_right, mouse_x, mouse_y } => {
+            let input = PlayerInput {
+                forward,
+                backward,
+                strafe_left,
+                strafe_right,
+                mouse_x,
+                mouse_y,
+            };
+            game_server.handle_player_input(player_id, input).await;
         }
-        ClientMessage::BulletFired { position, velocity } => {
-            if let Some(bullet_id) = game_server.fire_bullet(player_id, position, velocity).await {
-                info!("Player {} fired bullet {}", player_id, bullet_id);
+        ClientMessage::FireCommand {} => {
+            if let Some(bullet_id) = game_server.handle_fire_command(player_id).await {
+                info!("Player {} fired bullet {} via command", player_id, bullet_id);
             }
         }
-        ClientMessage::BulletHit { bullet_id, target_player_id, damage } => {
-            game_server.handle_bullet_hit(bullet_id, &target_player_id, damage).await;
-            info!("Bullet {} hit player {} for {} damage", bullet_id, target_player_id, damage);
+        ClientMessage::ChatMessage { message } => {
+            game_server.handle_chat_message(player_id, message).await;
         }
-        // Handle other binary messages
+        // Handle legacy messages during transition period
+        ClientMessage::PlayerUpdate { position, rotation, turret_rotation: _ } => {
+            // Convert legacy update to input (approximation)
+            // This is a temporary bridge during migration
+            let input = PlayerInput {
+                forward: false, // Can't determine from position update
+                backward: false,
+                strafe_left: false,
+                strafe_right: false,
+                mouse_x: rotation[1], // Use tank rotation as mouse approximation
+                mouse_y: 0.0,
+            };
+            game_server.handle_player_input(player_id, input).await;
+        }
+        ClientMessage::BulletFired { position: _, velocity: _ } => {
+            // Legacy bullet firing - use new command system instead
+            if let Some(bullet_id) = game_server.handle_fire_command(player_id).await {
+                info!("Player {} fired bullet {} via legacy command", player_id, bullet_id);
+            }
+        }
+        ClientMessage::Ping => {
+            // Echo back pong
+            let pong = ServerMessage::Pong;
+            if let Ok(data) = serde_json::to_string(&pong) {
+                // Would send here if we had access to sender
+            }
+        }
         _ => {
-            warn!("Received non-binary message in binary handler: {:?}", client_msg);
+            warn!("Unhandled message type from player {}", player_id);
         }
     }
     
     Ok(())
 }
 
-async fn handle_text_message(
-    text: &str, 
-    player_id: &str, 
-    game_server: &GameServer
+async fn handle_binary_message(
+    game_server: &GameServer,
+    player_id: &str,
+    data: &[u8],
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let client_msg = ClientMessage::from_json(text)?;
+    let message: ClientMessage = rmp_serde::from_slice(data)?;
     
-    match client_msg {
-        ClientMessage::ChatMessage { message } => {
-            game_server.handle_chat_message(player_id, message).await;
+    match message {
+        ClientMessage::PlayerInput { forward, backward, strafe_left, strafe_right, mouse_x, mouse_y } => {
+            let input = PlayerInput {
+                forward,
+                backward,
+                strafe_left,
+                strafe_right,
+                mouse_x,
+                mouse_y,
+            };
+            game_server.handle_player_input(player_id, input).await;
         }
-        ClientMessage::PlayerUpdate { position, rotation, turret_rotation } => {
-            // Handle PlayerUpdate in text handler (temporarily for debugging)
-            game_server.update_player(player_id, position, rotation, turret_rotation).await;
-        }
-        ClientMessage::BulletFired { position, velocity } => {
-            if let Some(bullet_id) = game_server.fire_bullet(player_id, position, velocity).await {
-                info!("Player {} fired bullet {}", player_id, bullet_id);
+        ClientMessage::FireCommand {} => {
+            if let Some(bullet_id) = game_server.handle_fire_command(player_id).await {
+                info!("Player {} fired bullet {} via command", player_id, bullet_id);
             }
         }
-        ClientMessage::Ping => {
-            // Send pong response
-            let pong = ServerMessage::Pong;
-            if pong.to_json().is_ok() {
-                // Note: This is a simplified example. In practice, you'd need to send this back
-                // through the WebSocket sender, which would require more complex message routing.
-                info!("Received ping from {}, should send pong", player_id);
-            }
-        }
-        // Handle other text messages or binary messages that were sent as text (shouldn't happen normally)
         _ => {
-            warn!("Received unexpected message in text handler: {:?}", client_msg);
+            // Handle other binary messages as text messages
+            let text = serde_json::to_string(&message)?;
+            handle_text_message(game_server, player_id, &text).await?;
         }
     }
     
@@ -193,4 +218,35 @@ pub fn log_message_size_analysis(msg: &ServerMessage) {
         "Message size analysis - Binary: {} bytes, JSON: {} bytes, Savings: {:.1}%",
         binary_size, json_size, savings
     );
-} 
+}
+
+/// Start the websocket server for testing (public function)
+pub async fn start_websocket_server() {
+    use axum::{
+        routing::{get, get_service},
+        Router,
+    };
+    use std::net::SocketAddr;
+    use tower::ServiceBuilder;
+    use tower_http::services::ServeDir;
+    
+    // Create shared game server with game loop for testing
+    let game_server = crate::game::GameServer::new().start_game_loop();
+
+    // Build test application with WebSocket route and static file serving
+    let app = Router::new()
+        .route("/ws", get(crate::network::websocket::websocket_handler))
+        .nest_service("/", get_service(ServeDir::new("public")))
+        .with_state(game_server)
+        .layer(
+            ServiceBuilder::new()
+                .layer(tower_http::cors::CorsLayer::permissive())
+        );
+
+    // Run on test port
+    let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
+    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
+    axum::serve(listener, app).await.unwrap();
+}
+
+ 

@@ -4,24 +4,43 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+# Server framework
 tokio = { version = "1.0", features = ["full"] }
 axum = { version = "0.7", features = ["ws"] }
-tokio-tungstenite = "0.21"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-rmp-serde = "1.1"
-uuid = { version = "1.0", features = ["v4", "serde"] }
-tracing = "0.1"
-tracing-subscriber = "0.3"
 tower = "0.4"
 tower-http = { version = "0.5", features = ["fs", "cors"] }
+hyper = { version = "1.0", features = ["full"] }
+
+# WebSocket support
 futures-util = "0.3"
-dashmap = "5.5"
-tokio-util = "0.7"
+tokio-tungstenite = "0.21"
+
+# Game logic
+uuid = { version = "1.0", features = ["v4", "serde"] }
+dashmap = "5.0"
 rand = "0.8"
+url = "2.4"
+
+# Physics Engine
+rapier3d = { version = "0.23", features = ["simd-stable", "serde-serialize"] }
+
+# Serialization 
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+rmp-serde = "1.0"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Added from the code block
+nalgebra = "0.32"
 
 [dev-dependencies]
 tokio-test = "0.4"
-tempfile = "3.8"
 reqwest = { version = "0.11", features = ["json"] }
-fantoccini = "0.20" 
+fantoccini = "0.21"
+ctrlc = "3.4"
+tokio-tungstenite = "0.21"
+headless_chrome = "1.0"
+tempfile = "3.8" 

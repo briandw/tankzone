@@ -1,0 +1,285 @@
+{
+  "$schema": "https://json-schema.org/draft/2019-09/schema",
+  "$id": "https://battlezone.game/schemas/server-messages.json",
+  "title": "Server to Client Messages",
+  "description": "JSON schema for messages sent from server to client",
+  
+  "type": "object",
+  "required": ["type"],
+  "discriminator": {
+    "propertyName": "type"
+  },
+  
+  "definitions": {
+    "$ref": "game-objects.json#/definitions"
+  },
+  
+  "oneOf": [
+    {
+      "type": "object",
+      "description": "Assign player ID to new client",
+      "required": ["type", "playerId"],
+      "properties": {
+        "type": { "const": "playerAssigned" },
+        "playerId": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Unique player identifier assigned by server"
+        }
+      },
+      "additionalProperties": false
+    },
+    
+    {
+      "type": "object",
+      "description": "New player joined the game",
+      "required": ["type", "player"],
+      "properties": {
+        "type": { "const": "playerJoined" },
+        "player": {
+          "type": "object",
+          "required": ["id", "position", "rotation", "turret_rotation", "health", "connected"],
+          "properties": {
+            "id": { "type": "string", "minLength": 1 },
+            "position": { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3 },
+            "rotation": { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3 },
+            "turret_rotation": { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3 },
+            "health": { "type": "integer", "minimum": 0, "maximum": 100 },
+            "connected": { "type": "boolean" }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    
+    {
+      "type": "object",
+      "description": "Player left the game",
+      "required": ["type", "playerId"],
+      "properties": {
+        "type": { "const": "playerLeft" },
+        "playerId": {
+          "type": "string",
+          "minLength": 1,
+          "description": "ID of player that left"
+        }
+      },
+      "additionalProperties": false
+    },
+    
+    {
+      "type": "object",
+      "description": "Complete game state update",
+      "required": ["type", "players", "enemies"],
+      "properties": {
+        "type": { "const": "gameStateUpdate" },
+        "players": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "position", "rotation", "turret_rotation", "health", "connected"],
+            "properties": {
+              "id": { "type": "string", "minLength": 1 },
+              "position": { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3 },
+              "rotation": { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3 },
+              "turret_rotation": { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3 },
+              "health": { "type": "integer", "minimum": 0, "maximum": 100 },
+              "connected": { "type": "boolean" }
+            },
+            "additionalProperties": false
+          }
+        },
+        "enemies": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "position", "rotation", "health", "max_health"],
+            "properties": {
+              "id": { "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$" },
+              "position": { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3 },
+              "rotation": { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3 },
+              "health": { "type": "integer", "minimum": 0 },
+              "max_health": { "type": "integer", "minimum": 1 }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    
+    {
+      "type": "object",
+      "description": "Player position and rotation update",
+      "required": ["type", "playerId", "position", "rotation", "turretRotation"],
+      "properties": {
+        "type": { "const": "playerMoved" },
+        "playerId": { "type": "string", "minLength": 1 },
+        "position": { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3 },
+        "rotation": { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3 },
+        "turretRotation": { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3 }
+      },
+      "additionalProperties": false
+    },
+    
+    {
+      "type": "object",
+      "description": "Chat message from a player",
+      "required": ["type", "playerId", "message"],
+      "properties": {
+        "type": { "const": "chatMessage" },
+        "playerId": { "type": "string", "minLength": 1 },
+        "message": { "type": "string", "minLength": 1 },
+        "timestamp": { "type": "integer", "minimum": 0, "description": "Unix timestamp in milliseconds" }
+      },
+      "additionalProperties": false
+    },
+    
+    {
+      "type": "object",
+      "description": "New bullet spawned",
+      "required": ["type", "bullet"],
+      "properties": {
+        "type": { "const": "bulletSpawned" },
+        "bullet": {
+          "type": "object",
+          "required": ["id", "player_id", "position", "velocity"],
+          "properties": {
+            "id": { "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$" },
+            "player_id": { "type": "string", "minLength": 1 },
+            "position": { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3 },
+            "velocity": { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3 }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    
+    {
+      "type": "object",
+      "description": "Bullet was destroyed",
+      "required": ["type", "bullet_id"],
+      "properties": {
+        "type": { "const": "bulletDestroyed" },
+        "bullet_id": { "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$" }
+      },
+      "additionalProperties": false
+    },
+    
+    {
+      "type": "object",
+      "description": "Bulk bullet position updates",
+      "required": ["type", "bullets"],
+      "properties": {
+        "type": { "const": "bulletsUpdate" },
+        "bullets": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "position"],
+            "properties": {
+              "id": { "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$" },
+              "position": { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3 }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    
+    {
+      "type": "object",
+      "description": "New enemy spawned",
+      "required": ["type", "enemy"],
+      "properties": {
+        "type": { "const": "enemySpawned" },
+        "enemy": {
+          "type": "object",
+          "required": ["id", "position", "rotation", "health", "max_health"],
+          "properties": {
+            "id": { "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$" },
+            "position": { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3 },
+            "rotation": { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3 },
+            "health": { "type": "integer", "minimum": 0 },
+            "max_health": { "type": "integer", "minimum": 1 }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    
+    {
+      "type": "object",
+      "description": "Enemy moved to new position",
+      "required": ["type", "enemy_id", "position", "rotation"],
+      "properties": {
+        "type": { "const": "enemyMoved" },
+        "enemy_id": { "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$" },
+        "position": { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3 },
+        "rotation": { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3 }
+      },
+      "additionalProperties": false
+    },
+    
+    {
+      "type": "object",
+      "description": "Enemy was hit by bullet",
+      "required": ["type", "enemy_id", "damage", "new_health"],
+      "properties": {
+        "type": { "const": "enemyHit" },
+        "enemy_id": { "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$" },
+        "damage": { "type": "integer", "minimum": 0 },
+        "new_health": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    
+    {
+      "type": "object",
+      "description": "Enemy was destroyed",
+      "required": ["type", "enemy_id", "position"],
+      "properties": {
+        "type": { "const": "enemyDestroyed" },
+        "enemy_id": { "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$" },
+        "position": { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3 }
+      },
+      "additionalProperties": false
+    },
+    
+    {
+      "type": "object",
+      "description": "Pong response to ping",
+      "required": ["type"],
+      "properties": {
+        "type": { "const": "pong" }
+      },
+      "additionalProperties": false
+    },
+    
+    {
+      "type": "object",
+      "description": "Server info message",
+      "required": ["type", "message"],
+      "properties": {
+        "type": { "const": "serverInfo" },
+        "message": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    
+    {
+      "type": "object",
+      "description": "Error message from server",
+      "required": ["type", "message"],
+      "properties": {
+        "type": { "const": "error" },
+        "message": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    }
+  ]
+} 
