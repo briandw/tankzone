@@ -8,14 +8,19 @@
     "generate-proto": "./scripts/generate-js-proto.sh",
     "build": "npm run generate-proto",
     "test-client": "node client/test-client.js",
-    "test-e2e": "make test-e2e"
+    "test-e2e": "make test-e2e",
+    "test-simple": "node test-simple-connection.js",
+    "test-headless-init": "node test-headless-initial-state.js",
+    "dev-client": "cd client && npm run dev",
+    "serve-client": "cd client && npm run serve"
   },
   "dependencies": {
     "ws": "^8.14.2",
     "protobufjs": "^7.2.5"
   },
   "devDependencies": {
-    "@types/node": "^20.8.0"
+    "@types/node": "^20.8.0",
+    "puppeteer": "^21.5.2"
   },
   "keywords": [
     "protobuf",

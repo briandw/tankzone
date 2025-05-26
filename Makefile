@@ -11,6 +11,7 @@ install:
 	@echo "📦 Installing dependencies..."
 	cargo fetch
 	npm install
+	cd client && npm install
 	@echo "✅ Dependencies installed"
 
 # Generate Protocol Buffer files for both Rust and JavaScript
@@ -20,10 +21,12 @@ proto:
 	./scripts/generate-js-proto.sh
 	@echo "✅ Protocol Buffer files generated"
 
-# Build everything (Rust + JS protobuf generation)
+# Build everything (Rust + JS protobuf generation + client)
 build: proto
 	@echo "🔨 Building Rust server..."
 	cargo build --workspace
+	@echo "🔨 Building client..."
+	cd client && npm run build
 	@echo "✅ Build completed"
 
 # Build for production
@@ -72,10 +75,23 @@ dev:
 	@echo "🔄 Starting development mode..."
 	cargo watch -x "build --package server" -s "make proto"
 
+# Start client development server
+dev-client:
+	@echo "🔄 Starting client development server..."
+	cd client && npm run dev
+
+# Start both server and client in development mode
+dev-full: 
+	@echo "🔄 Starting full development environment..."
+	@echo "Starting server in background..."
+	@make run > /dev/null 2>&1 & 
+	@echo "Starting client development server..."
+	@cd client && npm run dev
+
 # Start the server
 run: build
 	@echo "🚀 Starting Battle Tanks server..."
-	cargo run --bin server
+	cargo run --bin battletanks-server
 
 # Start server in release mode
 run-release: build-release

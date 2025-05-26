@@ -1,6 +1,6 @@
 use anyhow::Result;
 use battletanks_shared::{Config, ProtoNetworkMessage, PlayerId, network_message::MessageType, 
-    JoinGameResponse, ProtoGameConfig, ProtoVector2};
+    JoinGameResponse, ProtoGameConfig, ProtoVector2, TankState, ProtoVector3, TeamColor};
 use dashmap::DashMap;
 use std::sync::Arc;
 use std::net::SocketAddr;
@@ -22,6 +22,7 @@ use crate::game_state::GameState;
 use crate::network::{ClientConnection, NetworkEvent};
 use crate::physics::PhysicsWorld;
 use crate::state_sync::{StateSynchronizer, GameStateSnapshot, LagCompensator};
+
 
 /// Main game server that manages the game loop, physics, and client connections
 pub struct GameServer {
@@ -310,8 +311,35 @@ impl GameServer {
                     let mut snapshot = GameStateSnapshot::new(current_tick);
                     snapshot.round_time_remaining = 600.0; // TODO: Get from actual game state
                     
-                    // TODO: Populate snapshot with actual tank/projectile/powerup data from ECS
-                    // For now, we'll use empty vectors as placeholders
+                    // Populate snapshot with actual tank data from ECS
+                    let players = game_state_lock.get_players();
+                    for (entity_id, transform, tank, player) in players {
+                        let tank_state = TankState {
+                            entity_id,
+                            player_id: player.player_id.to_string(),
+                            display_name: player.name.clone(),
+                            position: Some(ProtoVector3 {
+                                x: transform.position.x,
+                                y: transform.position.y,
+                                z: transform.position.z,
+                            }),
+                            body_rotation: transform.rotation.euler_angles().1, // Y rotation
+                            turret_rotation: tank.turret_angle,
+                            health: tank.health,
+                            max_health: tank.max_health,
+                            team: match tank.team {
+                                battletanks_shared::Team::Red => TeamColor::TeamRed as i32,
+                                battletanks_shared::Team::Blue => TeamColor::TeamBlue as i32,
+                                battletanks_shared::Team::Neutral => TeamColor::TeamNeutral as i32,
+                            },
+                            active_powerups: vec![], // TODO: Implement power-ups
+                            is_invulnerable: false, // TODO: Implement invulnerability
+                            invulnerability_remaining: 0.0,
+                        };
+                        snapshot.tanks.push(tank_state);
+                    }
+                    
+                    // TODO: Populate projectiles and power-ups when implemented
                     
                     // Store snapshot and create delta update
                     let mut synchronizer = state_synchronizer.lock().await;
@@ -416,7 +444,8 @@ impl GameServer {
                     // Add player to game state
                     let entity_id = {
                         let mut game_state_lock = self.game_state.lock().await;
-                        game_state_lock.add_player(player_id, join_request.display_name.clone())
+                        let mut physics_world_lock = self.physics_world.lock().await;
+                        game_state_lock.add_player(player_id, join_request.display_name.clone(), &mut physics_world_lock)
                     };
                     
                     // Send success response

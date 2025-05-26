@@ -1,9 +1,10 @@
-use battletanks_shared::{Config, PlayerId, EntityId, ProtoPlayerInput, Transform};
-use crate::ecs::EcsWorld;
+use battletanks_shared::{Config, PlayerId, EntityId, ProtoPlayerInput, Transform, Tank};
+use crate::ecs::{EcsWorld, Player};
 use crate::physics::PhysicsWorld;
 use std::collections::HashMap;
 use std::collections::VecDeque;
 use tracing::info;
+use rapier3d::prelude::RigidBodyHandle;
 
 /// Main game state that coordinates ECS and Physics
 pub struct GameState {
@@ -49,17 +50,24 @@ impl GameState {
     }
 
     /// Add a player to the game
-    pub fn add_player(&mut self, player_id: PlayerId, name: String) -> EntityId {
-        // Create player tank entity (we'll integrate with physics later)
+    pub fn add_player(&mut self, player_id: PlayerId, name: String, physics_world: &mut PhysicsWorld) -> EntityId {
+        // Create player tank entity with proper physics integration
         let transform = Transform::default();
-        let physics_handle = rapier3d::prelude::RigidBodyHandle::from_raw_parts(0, 0); // Placeholder
         
+        // Create ECS entity first. We pass a default/invalid handle here, 
+        // as the real one is created by PhysicsWorld and assigned shortly after.
         let entity_id = self.ecs_world.create_player_tank(
             player_id,
             name.clone(),
             transform,
-            physics_handle,
+            RigidBodyHandle::invalid(), // Use an explicitly invalid handle
         );
+        
+        // Now create physics body with the correct entity ID
+        let physics_handle = physics_world.create_tank(entity_id, transform.position);
+        
+        // Assign the real physics handle to the ECS entity
+        self.ecs_world.assign_physics_handle(entity_id, physics_handle);
 
         // Initialize player score
         self.player_scores.insert(player_id, battletanks_shared::PlayerScore::default());
@@ -128,6 +136,11 @@ impl GameState {
     pub fn entity_count(&self) -> usize {
         self.ecs_world.entity_count()
     }
+
+    /// Get all players with their tank data for network synchronization
+    pub fn get_players(&self) -> Vec<(EntityId, Transform, Tank, Player)> {
+        self.ecs_world.get_players()
+    }
 }
 
 #[cfg(test)]
@@ -150,9 +163,10 @@ mod tests {
     fn test_add_player() {
         let config = Config::default();
         let mut game_state = GameState::new(&config);
+        let mut physics_world = PhysicsWorld::new(&config).unwrap();
         
         let player_id = Uuid::new_v4();
-        let entity_id = game_state.add_player(player_id, "TestPlayer".to_string());
+        let entity_id = game_state.add_player(player_id, "TestPlayer".to_string(), &mut physics_world);
         
         assert_eq!(game_state.player_count(), 1);
         assert_eq!(game_state.entity_count(), 1);
@@ -166,9 +180,10 @@ mod tests {
     fn test_remove_player() {
         let config = Config::default();
         let mut game_state = GameState::new(&config);
+        let mut physics_world = PhysicsWorld::new(&config).unwrap();
         
         let player_id = Uuid::new_v4();
-        game_state.add_player(player_id, "TestPlayer".to_string());
+        game_state.add_player(player_id, "TestPlayer".to_string(), &mut physics_world);
         
         assert_eq!(game_state.player_count(), 1);
         
@@ -183,9 +198,10 @@ mod tests {
     fn test_update_player_input() {
         let config = Config::default();
         let mut game_state = GameState::new(&config);
+        let mut physics_world = PhysicsWorld::new(&config).unwrap();
         
         let player_id = Uuid::new_v4();
-        game_state.add_player(player_id, "TestPlayer".to_string());
+        game_state.add_player(player_id, "TestPlayer".to_string(), &mut physics_world);
         
         let input = ProtoPlayerInput {
             forward: true,
@@ -225,12 +241,12 @@ mod tests {
     async fn test_game_state_update_with_timeout() -> Result<(), Box<dyn std::error::Error>> {
         let config = Config::default();
         let mut game_state = GameState::new(&config);
-        let physics_world = PhysicsWorld::new(&config)?;
+        let mut physics_world = PhysicsWorld::new(&config)?;
         
         // Add some players
         for i in 0..10 {
             let player_id = Uuid::new_v4();
-            game_state.add_player(player_id, format!("Player{}", i));
+            game_state.add_player(player_id, format!("Player{}", i), &mut physics_world);
         }
         
         let update_operation = async {

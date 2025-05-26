@@ -197,6 +197,41 @@ impl EcsWorld {
         }
     }
 
+    /// Assign or update the physics handle for an existing entity.
+    pub fn assign_physics_handle(&mut self, entity_id: EntityId, physics_handle: RigidBodyHandle) {
+        if let Some(&entity) = self.entity_map.get(&entity_id) {
+            let mut found_and_updated = false;
+            // Try to get and update existing PhysicsBody component
+            if let Ok(mut pb_view) = self.world.query_one::<&mut PhysicsBody>(entity) {
+                if let Some(pb) = pb_view.get() {
+                    pb.handle = physics_handle;
+                    found_and_updated = true;
+                } 
+            }
+
+            // If not found and updated (either query failed or component was None), try to insert.
+            if !found_and_updated {
+                warn!(
+                    "PhysicsBody component not found for entity {} (hecs: {:?}) during assign_physics_handle. Attempting to insert.",
+                    entity_id,
+                    entity
+                );
+                if self.world.insert_one(entity, PhysicsBody { handle: physics_handle }).is_err() {
+                    warn!(
+                        "Failed to insert PhysicsBody for entity {} (hecs: {:?}) during assign_physics_handle.",
+                        entity_id,
+                        entity
+                    );
+                }
+            }
+
+            // Update the physics_map in either case (if entity was valid)
+            self.physics_map.insert(entity, physics_handle);
+        } else {
+            warn!("Attempted to assign physics handle to unknown entity_id: {}", entity_id);
+        }
+    }
+
     /// Get all player entities with their components
     pub fn get_players(&self) -> Vec<(EntityId, Transform, Tank, Player)> {
         let mut players = Vec::new();
@@ -273,6 +308,11 @@ impl EcsWorld {
     /// Get the number of entities with a specific component
     pub fn count_entities_with<T: hecs::Component>(&self) -> usize {
         self.world.query::<&T>().iter().count()
+    }
+
+    /// Get the next entity ID that will be assigned
+    pub fn next_entity_id(&self) -> EntityId {
+        self.next_entity_id
     }
 
     /// Movement system - updates entity positions based on input
