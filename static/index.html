@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Battle Tanks</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+            background-color: #222;
+            color: white;
+        }
+        
+        #gameCanvas {
+            border: 2px solid #444;
+            background-color: #333;
+            display: block;
+            margin: 20px auto;
+        }
+        
+        #status {
+            text-align: center;
+            margin: 10px;
+        }
+        
+        #instructions {
+            text-align: center;
+            margin: 10px;
+            color: #aaa;
+        }
+    </style>
+</head>
+<body>
+    <h1 style="text-align: center;">Battle Tanks</h1>
+    <div id="status">Connecting...</div>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <div id="instructions">
+        WASD: Move tank | Arrow Keys: Rotate turret | Space: Fire (2 shots/sec)<br>
+        Blue tank: You | Red tanks: NPCs | Green tanks: Other players<br>
+        Yellow dots: Bullets | 25 damage per hit | 5 second respawn when destroyed<br>
+        <small>Each browser tab/window has its own tank identity</small>
+    </div>
+
+    <script>
+        class TankGame {
+            constructor() {
+                this.canvas = document.getElementById('gameCanvas');
+                this.ctx = this.canvas.getContext('2d');
+                this.status = document.getElementById('status');
+                
+                this.ws = null;
+                this.playerId = null;
+                this.userId = this.getWindowUserId(); // Get or create window-scoped user ID
+                this.tanks = [];
+                this.bullets = [];
+                this.keys = {};
+                
+                this.camera = { x: 0, y: 0 };
+                
+                this.setupInput();
+                this.connect();
+                this.gameLoop();
+            }
+            
+            // Window-scoped user ID management using sessionStorage
+            getWindowUserId() {
+                // Try to get user ID from sessionStorage (window-scoped)
+                let userId = sessionStorage.getItem('user_id');
+                
+                if (userId) {
+                    console.log('Found existing window user ID:', userId);
+                    return userId;
+                }
+                
+                // If no sessionStorage found, generate a new user ID
+                const newUserId = this.generateUserId();
+                console.log('Generated new window user ID:', newUserId);
+                this.setWindowUserId(newUserId);
+                return newUserId;
+            }
+            
+            generateUserId() {
+                // Generate a simple UUID-like string with window identifier
+                const windowId = Math.random().toString(36).substr(2, 6);
+                const timestamp = Date.now().toString(36);
+                return `window_${windowId}_${timestamp}`;
+            }
+            
+            setWindowUserId(userId) {
+                // Store in sessionStorage (persists across page reloads, unique per window/tab)
+                sessionStorage.setItem('user_id', userId);
+            }
+            
+            connect() {
+                // Connect to WebSocket on port 3001
+                const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                const wsHost = window.location.hostname;
+                const wsPort = '3001';
+                const wsUrl = `${wsProtocol}//${wsHost}:${wsPort}`;
+                
+                console.log('Connecting to WebSocket:', wsUrl);
+                this.ws = new WebSocket(wsUrl);
+                
+                this.ws.onopen = () => {
+                    console.log('Connected to server');
+                    this.status.textContent = 'Connected! Joining game...';
+                    this.ws.send(JSON.stringify({
+                        type: 'join',
+                        name: 'Player',
+                        user_id: this.userId
+                    }));
+                };
+                
+                this.ws.onmessage = (event) => {
+                    const message = JSON.parse(event.data);
+                    console.log('Received:', message);
+                    
+                    if (message.type === 'joined') {
+                        this.playerId = message.player_id;
+                        this.userId = message.user_id; // Update user ID from server
+                        this.setWindowUserId(this.userId); // Make sure sessionStorage is updated
+                        this.status.textContent = `Joined game! Window ID: ${this.userId.substring(0, 12)}...`;
+                    } else if (message.type === 'game_state') {
+                        this.tanks = message.tanks;
+                        this.bullets = message.bullets || [];
+                    }
+                };
+                
+                this.ws.onclose = () => {
+                    console.log('Disconnected from server');
+                    this.status.textContent = 'Disconnected. Reconnecting...';
+                    setTimeout(() => this.connect(), 2000);
+                };
+                
+                this.ws.onerror = (error) => {
+                    console.error('WebSocket error:', error);
+                    this.status.textContent = 'Connection error';
+                };
+            }
+            
+            setupInput() {
+                document.addEventListener('keydown', (e) => {
+                    this.keys[e.code] = true;
+                    this.sendInput();
+                    e.preventDefault(); // Prevent default browser behavior
+                });
+                
+                document.addEventListener('keyup', (e) => {
+                    this.keys[e.code] = false;
+                    this.sendInput();
+                    e.preventDefault(); // Prevent default browser behavior
+                });
+            }
+            
+            sendInput() {
+                if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                    const input = {
+                        // WASD for tank movement
+                        w: this.keys['KeyW'] || false,
+                        a: this.keys['KeyA'] || false,
+                        s: this.keys['KeyS'] || false,
+                        d: this.keys['KeyD'] || false,
+                        // Arrow keys for turret
+                        arrow_left: this.keys['ArrowLeft'] || false,
+                        arrow_right: this.keys['ArrowRight'] || false,
+                        // Space for firing
+                        space: this.keys['Space'] || false
+                    };
+                    
+                    this.ws.send(JSON.stringify({
+                        type: 'input',
+                        ...input
+                    }));
+                }
+            }
+            
+            updateCamera() {
+                // Center camera on player tank
+                const playerTank = this.tanks.find(tank => tank.id === this.userId);
+                if (playerTank) {
+                    this.camera.x = playerTank.position.x - this.canvas.width / 2;
+                    this.camera.y = playerTank.position.y - this.canvas.height / 2;
+                }
+            }
+            
+            render() {
+                // Clear canvas
+                this.ctx.fillStyle = '#333';
+                this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+                
+                // Update camera
+                this.updateCamera();
+                
+                // Draw grid
+                this.ctx.strokeStyle = '#444';
+                this.ctx.lineWidth = 1;
+                const gridSize = 50;
+                
+                for (let x = -this.camera.x % gridSize; x < this.canvas.width; x += gridSize) {
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(x, 0);
+                    this.ctx.lineTo(x, this.canvas.height);
+                    this.ctx.stroke();
+                }
+                
+                for (let y = -this.camera.y % gridSize; y < this.canvas.height; y += gridSize) {
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(0, y);
+                    this.ctx.lineTo(this.canvas.width, y);
+                    this.ctx.stroke();
+                }
+                
+                // Draw bullets first (behind tanks)
+                this.bullets.forEach(bullet => {
+                    const screenX = bullet.position.x - this.camera.x;
+                    const screenY = bullet.position.y - this.camera.y;
+                    
+                    // Skip if bullet is off screen
+                    if (screenX < -10 || screenX > this.canvas.width + 10 ||
+                        screenY < -10 || screenY > this.canvas.height + 10) {
+                        return;
+                    }
+                    
+                    // Draw bullet as a small yellow circle
+                    this.ctx.fillStyle = '#ffff00';
+                    this.ctx.beginPath();
+                    this.ctx.arc(screenX, screenY, 3, 0, Math.PI * 2);
+                    this.ctx.fill();
+                    
+                    // Add a small trail effect
+                    this.ctx.fillStyle = '#ffff0080';
+                    this.ctx.beginPath();
+                    this.ctx.arc(screenX - bullet.velocity.x * 0.5, screenY - bullet.velocity.y * 0.5, 2, 0, Math.PI * 2);
+                    this.ctx.fill();
+                });
+                
+                // Draw tanks
+                this.tanks.forEach(tank => {
+                    const screenX = tank.position.x - this.camera.x;
+                    const screenY = tank.position.y - this.camera.y;
+                    
+                    // Skip if tank is off screen
+                    if (screenX < -50 || screenX > this.canvas.width + 50 ||
+                        screenY < -50 || screenY > this.canvas.height + 50) {
+                        return;
+                    }
+                    
+                    // Skip dead tanks (they're invisible while respawning)
+                    if (tank.is_dead) {
+                        return;
+                    }
+                    
+                    // Draw tank body
+                    this.ctx.save();
+                    this.ctx.translate(screenX, screenY);
+                    this.ctx.rotate(tank.rotation);
+                    
+                    // Tank color
+                    if (tank.id === this.userId) {
+                        this.ctx.fillStyle = '#4444ff'; // Blue for player
+                    } else if (tank.is_player) {
+                        this.ctx.fillStyle = '#44ff44'; // Green for other players
+                    } else {
+                        this.ctx.fillStyle = '#ff4444'; // Red for NPCs
+                    }
+                    
+                    // Draw tank body (rectangle)
+                    this.ctx.fillRect(-15, -10, 30, 20);
+                    
+                    this.ctx.restore();
+                    
+                    // Draw turret (separate rotation)
+                    this.ctx.save();
+                    this.ctx.translate(screenX, screenY);
+                    this.ctx.rotate(tank.rotation + tank.turret_rotation);
+                    
+                    // Draw turret barrel
+                    this.ctx.fillStyle = '#666';
+                    this.ctx.fillRect(0, -2, 25, 4);
+                    
+                    // Draw turret base (small circle)
+                    this.ctx.fillStyle = '#888';
+                    this.ctx.beginPath();
+                    this.ctx.arc(0, 0, 6, 0, Math.PI * 2);
+                    this.ctx.fill();
+                    
+                    this.ctx.restore();
+                    
+                    // Draw health bar
+                    this.ctx.fillStyle = '#ff0000';
+                    this.ctx.fillRect(screenX - 15, screenY - 25, 30, 4);
+                    this.ctx.fillStyle = '#00ff00';
+                    this.ctx.fillRect(screenX - 15, screenY - 25, (tank.health / 100) * 30, 4);
+                    
+                    // Draw tank ID
+                    this.ctx.fillStyle = 'white';
+                    this.ctx.font = '12px Arial';
+                    this.ctx.textAlign = 'center';
+                    this.ctx.fillText(tank.id.substring(0, 12), screenX, screenY + 35);
+                });
+            }
+            
+            gameLoop() {
+                this.render();
+                requestAnimationFrame(() => this.gameLoop());
+            }
+        }
+        
+        // Start the game when page loads
+        window.addEventListener('load', () => {
+            new TankGame();
+        });
+    </script>
+</body>
+</html> 

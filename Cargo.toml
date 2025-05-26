@@ -1,72 +1,18 @@
-[workspace]
-members = ["server", "shared"]
-resolver = "2"
+[package]
+name = "battletanks"
+version = "0.1.0"
+edition = "2021"
 
-[workspace.dependencies]
-# Async runtime
+[dependencies]
 tokio = { version = "1.35", features = ["full"] }
 tokio-tungstenite = "0.21"
-
-# Serialization
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-prost = "0.12"
-prost-types = "0.12"
-
-# Physics
-rapier3d = { version = "0.18", features = ["serde-serialize"] }
-nalgebra = { version = "0.32", features = ["serde-serialize"] }
-
-# ECS
-hecs = "0.10"
-
-# Networking
-futures-util = "0.3"
-uuid = { version = "1.6", features = ["v4", "serde"] }
-dashmap = "5.5"
-
-# Logging
+uuid = { version = "1.6", features = ["v4"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+futures-util = "0.3"
+rand = "0.8"
 
-# Configuration
-dotenvy = "0.15"
-
-# Error handling
-anyhow = "1.0"
-thiserror = "1.0"
-
-# Testing
-criterion = { version = "0.5", features = ["html_reports"] }
-
-# Time
-chrono = { version = "0.4", features = ["serde"] }
-
-# HTTP for health checks
-hyper = { version = "1.0", features = ["full"] }
-hyper-util = { version = "0.1", features = ["full"] }
-http-body-util = "0.1"
-
-[profile.dev]
-opt-level = 1
-debug = true
-
-[profile.release]
-opt-level = 3
-lto = true
-codegen-units = 1
-panic = "abort"
-
-# Custom make targets for development workflow
-[workspace.metadata.commands]
-# Generate JavaScript Protocol Buffer files
-generate-js-proto = "scripts/generate-js-proto.sh"
-
-# Run all tests including integration tests
-test-all = "cargo test --workspace && npm run test:js-protobuf-mock"
-
-# Start development server with hot reload
-dev-server = "cargo watch -x 'run --bin server'"
-
-# Build everything (Rust + JS protobuf)
-build-all = "cargo build --workspace && scripts/generate-js-proto.sh" 
+[dev-dependencies]
+tokio-test = "0.4" 

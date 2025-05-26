@@ -1,255 +1,133 @@
-# Battle Tanks 🎮
+# Battle Tanks - Simple 2D Tank Game
 
-A multiplayer tank combat game with a cyberpunk aesthetic, built with Rust server and JavaScript client.
+A minimal 2D tank game built with Rust (server) and vanilla JavaScript (client).
 
-## 🏗️ Architecture
+## Features
 
-- **Server**: Rust with Rapier3D physics engine (30Hz tick rate)
-- **Client**: JavaScript with Three.js rendering (Milestone 3+)
-- **Protocol**: Protocol Buffers over WebSocket
-- **Build System**: Unified Makefile coordinating Rust and JavaScript builds
+- **Simple 2D graphics** - Canvas-based rendering with tank sprites
+- **Real-time multiplayer** - WebSocket communication
+- **NPC tanks** - AI-controlled tanks that move in patterns
+- **Arrow key controls** - Move your tank with arrow keys
+- **Window-scoped identity** - Each browser tab gets its own tank
+- **Network multiplayer** - Play with others on your local network
+- **No complex dependencies** - No physics engine, no build tools, no protobuf
 
-## 🚀 Quick Start
+## Quick Start
 
-### Prerequisites
+### Development Mode (Auto-reload)
+```bash
+# Option 1: Use the development script (recommended)
+./dev.sh dev
 
-- **Rust** (latest stable) - [Install here](https://rustup.rs/)
-- **Node.js** (16+) - [Install here](https://nodejs.org/)
-- **Protocol Buffers Compiler** - `brew install protobuf` (macOS) or `sudo apt-get install protobuf-compiler` (Ubuntu)
+# Option 2: Use cargo directly
+cargo dev
 
-### Setup
+# Option 3: Use cargo-watch directly
+cargo watch -x run
+```
+
+### Production Mode
+```bash
+cargo run --release
+```
+
+### Playing the Game
+
+1. **Play locally:**
+   - Go to http://localhost:3000 in your browser
+   - Use WASD to move your tank, arrow keys for turret, space to fire
+   - Red tanks are NPCs
+
+2. **Play on network:**
+   - Server runs on all network interfaces (0.0.0.0)
+   - Find your IP address: `ifconfig` (macOS/Linux) or `ipconfig` (Windows)
+   - Share the URL: `http://YOUR_IP:3000`
+   - Others can join from phones, tablets, other computers
+
+3. **Run tests:**
+   ```bash
+   # Unit tests (no server required)
+   cargo test
+   ./dev.sh test
+   
+   # Integration tests (requires running server)
+   ./dev.sh dev                    # Start server in one terminal
+   ./dev.sh test-integration       # Run integration tests in another
+   
+   # All tests
+   ./dev.sh test-all
+   ```
+
+## Development Commands
 
 ```bash
-# Clone and setup everything
-git clone <repository-url>
-cd battletanks
-make setup  # Installs dependencies, builds everything, runs tests
+./dev.sh dev              # Start with auto-reload
+./dev.sh build            # Build project
+./dev.sh test             # Run unit tests
+./dev.sh test-integration # Run integration tests (requires server)
+./dev.sh test-all         # Run all tests
+./dev.sh stop             # Stop all servers
+./dev.sh clean            # Clean build artifacts
 ```
 
-### Development
-
+Or use cargo aliases:
 ```bash
-# Start development mode (auto-rebuild on changes)
-make dev
-
-# Or manually start the server
-make run
-
-# Run all tests
-make test
+cargo dev             # Start with auto-reload
+cargo w               # Same as above (short)
+cargo t               # Run unit tests
+cargo test-integration # Run integration tests
+cargo test-all        # Run all tests
+cargo c               # Check code
+cargo watch-test      # Watch and run tests on file changes
 ```
 
-## 📋 Development Milestones
+## Network Access
 
-### ✅ Milestone 1: Core Server Infrastructure (Current)
-- [x] Rust server with WebSocket support
-- [x] Rapier3D physics integration (30Hz)
-- [x] Entity Component System (Hecs)
-- [x] Game state management
-- [x] Protocol Buffer definitions
-- [x] Comprehensive testing suite
+The server binds to `0.0.0.0:3000` (HTTP) and `0.0.0.0:3001` (WebSocket), making it accessible from:
 
-### ✅ Milestone 2: Network Protocol & Client Communication (Complete)
-- [x] Protocol Buffer message handling
-- [x] Client-server communication
-- [x] State synchronization with delta compression
-- [x] Rate limiting and validation
-- [x] Cross-platform JavaScript ↔ Rust testing
+- **Local machine**: http://localhost:3000
+- **Local network**: http://192.168.1.215:3000 (replace with your IP)
+- **Mobile devices**: Same network IP from phones/tablets
+- **Other computers**: Same network IP from any device
 
-### 📅 Milestone 3: Basic Client Implementation
-- [ ] Three.js scene setup
-- [ ] Tank rendering and animation
-- [ ] Input system
-- [ ] HUD implementation
-- [ ] **JavaScript Protocol Buffer integration** ← JS files created here
+The client automatically connects to the same host that served the page, so network access works seamlessly.
 
-### 📅 Milestone 4+: Core Gameplay, Multiplayer, Polish
+## Architecture
 
-## 🔧 Build System
+- **Server (Rust)**: Simple WebSocket server that serves static files and manages game state
+- **Client (JavaScript)**: Vanilla JS with Canvas 2D rendering
+- **Protocol**: Simple JSON messages over WebSocket
+- **Identity**: Window-scoped using sessionStorage (each tab = separate tank)
 
-### Unified Build Strategy
+## Game Controls
 
-The project uses a **unified build system** where:
+- **WASD**: Move tank body
+- **Arrow Keys**: Rotate turret independently
+- **Space**: Fire (logged to server console)
+- **Blue Tank**: Your tank
+- **Red Tanks**: NPCs
+- **Green Tanks**: Other players
 
-1. **Protocol Buffers are the single source of truth** - defined in `proto/*.proto`
-2. **Rust build generates Rust code** - via `prost` in `shared/build.rs`
-3. **JavaScript files are generated from the same .proto files** - via `scripts/generate-js-proto.sh`
-4. **Makefile coordinates everything** - ensures consistency between Rust and JS
+## Multiple Players
 
-### Build Commands
+- **Same device**: Open multiple browser tabs for multiple tanks
+- **Different devices**: Connect from phones, tablets, other computers
+- **Persistent identity**: Each browser tab maintains its tank across page reloads
+- **Real-time sync**: All players see each other's movements and NPC activity
 
+## Development
+
+The entire game is contained in:
+- `src/main.rs` - Rust server with WebSocket game logic (423 lines)
+- `static/index.html` - Complete client with HTML, CSS, and JavaScript (278 lines)
+
+No build tools, no complex dependencies, no configuration files needed.
+
+## Testing
+
+Run the connection test:
 ```bash
-# Core commands
-make install      # Install all dependencies
-make proto        # Generate Protocol Buffer files for both Rust and JS
-make build        # Build everything (Rust + JS protobuf generation)
-make test         # Run all tests (Rust + end-to-end JS ↔ Rust)
-make test-e2e     # Run end-to-end JavaScript ↔ Rust tests only
-make run          # Start the server
-
-# Development
-make dev          # Development mode with auto-rebuild
-make check        # Format, lint, and test everything
-make clean        # Clean all build artifacts
-
-# Production
-make build-release # Build optimized release version
-make run-release   # Run in release mode
+cargo test test_simple_connection
 ```
 
-### Protocol Buffer Generation
-
-```bash
-# Generate both Rust and JavaScript Protocol Buffer files
-make proto
-
-# This runs:
-# 1. cargo build --package shared  (generates Rust files)
-# 2. ./scripts/generate-js-proto.sh (generates JS files)
-```
-
-**Why this approach?**
-- ✅ **Single source of truth** - one set of .proto files
-- ✅ **Consistency** - Rust and JS use identical message definitions
-- ✅ **Automatic** - JS files regenerated whenever Rust builds
-- ✅ **No duplication** - no separate client build system needed
-
-## 📁 Project Structure
-
-```
-battletanks/
-├── Cargo.toml              # Rust workspace configuration
-├── Makefile                # Unified build system
-├── package.json            # Node.js dependencies for protobuf generation
-├── proto/                  # Protocol Buffer definitions (single source of truth)
-│   └── messages.proto
-├── scripts/
-│   └── generate-js-proto.sh # JavaScript protobuf generation
-├── shared/                 # Shared Rust library
-│   ├── src/
-│   │   ├── types.rs        # Game types
-│   │   ├── events.rs       # Network messages
-│   │   └── config.rs       # Configuration
-│   └── build.rs            # Rust protobuf generation
-├── server/                 # Rust server
-│   ├── src/
-│   │   ├── main.rs         # Entry point
-│   │   ├── server.rs       # Main game server
-│   │   ├── network.rs      # Client connections
-│   │   ├── physics.rs      # Rapier3D wrapper
-│   │   ├── ecs.rs          # Entity Component System
-│   │   └── game_state.rs   # Game state management
-│   └── tests/              # Integration tests
-└── client/                 # JavaScript client (Milestone 3+)
-    └── src/
-        └── proto/          # Generated JS protobuf files (auto-generated)
-```
-
-## 🧪 Testing
-
-### Current Tests (Milestone 1)
-
-```bash
-# Run all Rust tests
-cargo test --workspace
-
-# Run integration tests
-make test-integration
-
-# Run specific test suites
-cargo test --package server
-cargo test --package shared
-```
-
-### Test Coverage
-
-- **Unit tests**: All core components (physics, ECS, networking)
-- **Integration tests**: WebSocket connections, health endpoints, multi-client scenarios
-- **Performance tests**: 30Hz physics with 100+ entities
-- **Timeout compliance**: All tests complete within 30 seconds (following cursor rules)
-
-### End-to-End Testing (Milestone 2+)
-
-Cross-platform JavaScript ↔ Rust Protocol Buffer testing:
-
-```bash
-# Run end-to-end tests (starts server on ephemeral port)
-make test-e2e
-
-# Or via npm
-npm run test-e2e
-
-# Manual client testing against running server
-node client/test-client.js [port]
-```
-
-**What it tests:**
-- ✅ **Cross-platform Protocol Buffer compatibility** - JavaScript ↔ Rust message serialization
-- ✅ **Real-time communication** - WebSocket connection with sub-millisecond latency
-- ✅ **Game message flow** - Join game, player input, ping/pong, chat, state updates
-- ✅ **Rate limiting** - Server properly handles rapid client input
-- ✅ **Delta compression** - State synchronization with 90%+ size reduction
-- ✅ **Automated testing** - Server starts on ephemeral port, tests run, server shuts down
-
-**Test Results Example:**
-```
-✅ Join Game: Player ID abc123, Entity ID 1
-✅ Ping/Pong: RTT 1ms  
-✅ Chat: Message echoed back
-📊 Test Results: 5/5 passed
-```
-
-## 🔍 Development Guidelines
-
-### Rust Guidelines
-- Follow cursor rules for timeouts in tests
-- Use `Result<T, E>` for error handling
-- Comprehensive unit tests for all modules
-- Integration tests with proper cleanup
-
-### Protocol Buffer Strategy
-- Define messages in `proto/*.proto` only
-- Generate both Rust and JS from same source
-- Version compatibility maintained automatically
-- Binary efficiency over JSON
-
-### Performance Requirements
-- Server: 30Hz physics simulation
-- Client: 60 FPS rendering (Milestone 3+)
-- Network: Support 50 concurrent players
-- Latency: Playable up to 150ms
-
-## 📊 Current Status
-
-**Milestone 1 Progress**: ✅ Complete
-- ✅ Rust server infrastructure
-- ✅ WebSocket handling
-- ✅ Rapier3D physics (30Hz)
-- ✅ ECS with Hecs
-- ✅ Game state management
-- ✅ Protocol Buffer definitions
-- ✅ Comprehensive test suite
-- ✅ Health check endpoints
-- ✅ Unified build system
-
-**Milestone 2 Progress**: ✅ Complete
-- ✅ StateSynchronizer with delta compression (90%+ size reduction)
-- ✅ LagCompensator for input timing
-- ✅ NetworkManager with rate limiting
-- ✅ Complete Protocol Buffer message flow
-- ✅ Cross-platform JavaScript ↔ Rust validation
-- ✅ End-to-end automated testing system
-
-**Next**: Milestone 3 - Basic Client Implementation
-
-## 🤝 Contributing
-
-1. Follow the milestone structure
-2. Run `make check` before committing
-3. Ensure all tests pass with `make test`
-4. Use the unified build system (`make build`)
-5. JavaScript client work starts in Milestone 3
-
-## 📝 License
-
-MIT License - see LICENSE file for details. 
+This verifies that the WebSocket server accepts connections, handles join requests, sends game state updates, and processes player input. 

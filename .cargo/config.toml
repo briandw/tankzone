@@ -1,0 +1,20 @@
+[alias]
+# Development aliases
+dev = "watch -x run"
+w = "watch -x run"
+t = "test"
+b = "build"
+c = "check"
+
+# Watch with specific options
+watch-test = "watch -x test"
+watch-check = "watch -x check"
+
+# Test variants
+test-unit = "test"
+test-integration = "test -- --ignored"
+test-all = "test -- --include-ignored"
+
+# Quick commands
+quick = "run --release"
+debug = "run" 
