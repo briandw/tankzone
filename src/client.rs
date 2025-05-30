@@ -320,7 +320,7 @@ fn update_game_entities(
         };
         
         let tank_transform = Transform::from_xyz(tank.position.x, 0.0, tank.position.y)
-            .with_rotation(Quat::from_rotation_y(-tank.rotation + std::f32::consts::FRAC_PI_2))
+            .with_rotation(Quat::from_rotation_y(-tank.rotation))
             .with_scale(Vec3::splat(10.0));
             
         if let Some(entity) = existing_tanks.get(&tank.id) {
