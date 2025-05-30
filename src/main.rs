@@ -5,87 +5,11 @@ use tokio::sync::{RwLock, mpsc};
 use tokio::net::{TcpListener, TcpStream};
 use tokio_tungstenite::{accept_async, tungstenite::Message};
 use futures_util::{SinkExt, StreamExt};
-use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct Position {
-    x: f32,
-    y: f32,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct Velocity {
-    x: f32,
-    y: f32,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct Bullet {
-    id: String,
-    position: Position,
-    velocity: Velocity,
-    owner_id: String,
-    created_at: u64, // Timestamp for bullet lifetime
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct Tank {
-    id: String,
-    position: Position,
-    rotation: f32,      // Tank body rotation
-    turret_rotation: f32, // Turret rotation (relative to body)
-    is_player: bool,
-    health: i32,
-    is_dead: bool,
-    respawn_time: Option<u64>, // Timestamp when tank will respawn
-    last_fire_time: u64, // Timestamp of last bullet fired
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct GameState {
-    tanks: Vec<Tank>,
-    bullets: Vec<Bullet>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct PlayerInput {
-    // WASD for tank movement
-    w: bool,  // forward
-    a: bool,  // turn left
-    s: bool,  // backward
-    d: bool,  // turn right
-    // Arrow keys for turret
-    arrow_left: bool,   // turret left
-    arrow_right: bool,  // turret right
-    // Space for firing
-    space: bool,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(tag = "type")]
-enum ClientMessage {
-    #[serde(rename = "join")]
-    Join { 
-        name: String,
-        user_id: Option<String>, // Optional user ID for reconnection
-    },
-    #[serde(rename = "input")]
-    Input(PlayerInput),
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(tag = "type")]
-enum ServerMessage {
-    #[serde(rename = "joined")]
-    Joined { 
-        player_id: String,
-        user_id: String, // Send back the user ID for client to store
-    },
-    #[serde(rename = "game_state")]
-    GameState(GameState),
-}
+// Use shared types from lib
+use battlexone_shared::*;
 
 type Players = Arc<RwLock<HashMap<String, Tank>>>;
 type Bullets = Arc<RwLock<Vec<Bullet>>>;
@@ -199,16 +123,60 @@ async fn handle_http_request(mut stream: TcpStream, addr: SocketAddr) {
     
     let mut buffer = [0; 1024];
     if let Ok(_) = stream.read(&mut buffer).await {
-        // Simple routing - just serve index.html for any request
-        let html_content = include_str!("../static/index.html");
+        let request = String::from_utf8_lossy(&buffer);
         
-        let response = format!(
-            "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\n\r\n{}",
-            html_content.len(),
-            html_content
+        // Parse the request line to get the path
+        let path = if let Some(first_line) = request.lines().next() {
+            let parts: Vec<&str> = first_line.split_whitespace().collect();
+            if parts.len() >= 2 && parts[0] == "GET" {
+                parts[1]
+            } else {
+                "/"
+            }
+        } else {
+            "/"
+        };
+        
+        // Sanitize path and determine file to serve
+        let file_name = match path {
+            "/" => "index.html",
+            "/bevy" | "/bevy.html" => "bevy.html",
+            "/tank" | "/tank.gltf" => "tank.gltf",
+            "/scene.bin" => "scene.bin",
+            "/client.js" => "client.js",
+            "/client_bg.wasm" => "client_bg.wasm",
+            _ => "index.html", // default fallback
+        };
+        
+        let file_path = format!("./static/{}", file_name);
+        let content_result = std::fs::read(&file_path);
+        let mut content = b"404 Not Found".to_vec();
+        let mut content_type = "text/plain";
+        let mut response_code = 200;
+
+        if let Ok(file_content) = content_result {
+            content = file_content;
+            content_type = match file_name {
+                name if name.ends_with(".html") => "text/html",
+                name if name.ends_with(".gltf") => "application/json",
+                name if name.ends_with(".bin") => "application/octet-stream",
+                name if name.ends_with(".js") => "application/javascript",
+                name if name.ends_with(".wasm") => "application/wasm",
+                _ => "application/octet-stream",
+            };
+        } else {
+            response_code = 404;
+        }
+        
+        let header: String = format!(
+            "HTTP/1.1 {}\r\nContent-Type: {}\r\nContent-Length: {}\r\n\r\n",
+            response_code,
+            content_type,
+            content.len(),
         );
         
-        let _ = stream.write_all(response.as_bytes()).await;
+        let _ = stream.write_all(header.as_bytes()).await;
+        let _ = stream.write_all(&content).await;
     }
 }
 
@@ -274,116 +242,110 @@ async fn handle_websocket_connection(ws_stream: tokio_tungstenite::WebSocketStre
     while let Some(msg) = ws_receiver.next().await {
         match msg {
             Ok(Message::Text(text)) => {
-                if let Ok(client_msg) = serde_json::from_str::<ClientMessage>(&text) {
-                    match client_msg {
-                        ClientMessage::Join { name: _, user_id } => {
-                            // Use provided user_id or generate new one
-                            let actual_user_id = user_id.unwrap_or_else(|| Uuid::new_v4().to_string());
-                            current_user_id = Some(actual_user_id.clone());
-                            
-                            // Check if this user already has a tank (reconnection)
-                            let existing_tank = {
-                                let players_guard = players.read().await;
-                                players_guard.values().find(|tank| tank.id == actual_user_id && tank.is_player).cloned()
-                            };
-                            
-                            let player_tank = if let Some(mut existing) = existing_tank {
-                                println!("Player {} reconnected", actual_user_id);
-                                // Update the tank ID to use the current player_id for client mapping
-                                existing.id = actual_user_id.clone();
-                                existing
-                            } else {
-                                println!("New player {} joined", actual_user_id);
-                                                                        Tank {
-                                            id: actual_user_id.clone(),
-                                            position: Position { x: 0.0, y: 0.0 },
-                                            rotation: 0.0,
-                                            turret_rotation: 0.0,
-                                            is_player: true,
-                                            health: 100,
-                                            is_dead: false,
-                                            respawn_time: None,
-                                            last_fire_time: 0,
-                                        }
-                            };
-                            
-                            {
-                                let mut players_guard = players.write().await;
-                                players_guard.insert(actual_user_id.clone(), player_tank);
-                            }
-                            
-                            // Update the client mapping to use the user_id
-                            {
-                                let mut clients_guard = clients.write().await;
-                                clients_guard.remove(&connection_id);
-                                clients_guard.insert(actual_user_id.clone(), tx.clone());
-                            }
-                            
-                            // Send joined confirmation through the channel
-                            let joined_msg = ServerMessage::Joined { 
-                                player_id: actual_user_id.clone(),
-                                user_id: actual_user_id.clone(),
-                            };
-                            if let Ok(msg) = serde_json::to_string(&joined_msg) {
-                                let _ = tx.send(msg);
-                            }
-                        }
-                        ClientMessage::Input(input) => {
-                            // Use the stored user_id for this connection
-                            if let Some(user_id) = &current_user_id {
-                                // Update player tank based on input
+                match serde_json::from_str::<ClientMessage>(&text) {
+                    Ok(client_msg) => {
+                        match client_msg {
+                            ClientMessage::Join { name: _, user_id } => {
+                                // Use provided user_id or generate new one
+                                let actual_user_id = user_id.unwrap_or_else(|| Uuid::new_v4().to_string());
+                                current_user_id = Some(actual_user_id.clone());
+                                
+                                // Check if this user already has a tank (reconnection)
+                                let existing_tank = {
+                                    let players_guard = players.read().await;
+                                    players_guard.values().find(|tank| tank.id == actual_user_id && tank.is_player).cloned()
+                                };
+                                
+                                let player_tank = if let Some(mut existing) = existing_tank {
+                                    println!("Player {} reconnected", actual_user_id);
+                                    // Update the tank ID to use the current player_id for client mapping
+                                    existing.id = actual_user_id.clone();
+                                    existing
+                                } else {
+                                    println!("New player {} joined", actual_user_id);
+                                                                            Tank {
+                                                id: actual_user_id.clone(),
+                                                position: Position { x: 0.0, y: 0.0 },
+                                                rotation: 0.0,
+                                                turret_rotation: 0.0,
+                                                is_player: true,
+                                                health: 100,
+                                                is_dead: false,
+                                                respawn_time: None,
+                                                last_fire_time: 0,
+                                            }
+                                };
+                                
                                 {
+                                    let mut players_guard = players.write().await;
+                                    players_guard.insert(actual_user_id.clone(), player_tank);
+                                }
+                                
+                                // Update the client mapping to use the user_id
+                                {
+                                    let mut clients_guard = clients.write().await;
+                                    clients_guard.remove(&connection_id);
+                                    clients_guard.insert(actual_user_id.clone(), tx.clone());
+                                }
+                                
+                                // Send joined confirmation through the channel
+                                let joined_msg = ServerMessage::Joined { 
+                                    player_id: actual_user_id.clone(),
+                                    user_id: actual_user_id.clone(),
+                                };
+                                if let Ok(msg) = serde_json::to_string(&joined_msg) {
+                                    let _ = tx.send(msg);
+                                }
+                            }
+                            ClientMessage::Input { input } => {
+                                if let Some(user_id) = &current_user_id {
+                                    let input_decoded = ClientMessage::decode_input(input);
                                     let mut players_guard = players.write().await;
                                     if let Some(tank) = players_guard.get_mut(user_id) {
                                         let move_speed = 3.0;
                                         let turn_speed = 0.05;
                                         let turret_speed = 0.08;
-                                        
                                         // Tank body rotation (A/D keys)
-                                        if input.a {
+                                        if input_decoded.a {
                                             tank.rotation -= turn_speed;
                                         }
-                                        if input.d {
+                                        if input_decoded.d {
                                             tank.rotation += turn_speed;
                                         }
-                                        
                                         // Tank movement (W/S keys) - move in direction tank is facing
-                                        if input.w {
+                                        if input_decoded.w {
                                             tank.position.x += tank.rotation.cos() * move_speed;
                                             tank.position.y += tank.rotation.sin() * move_speed;
                                         }
-                                        if input.s {
+                                        if input_decoded.s {
                                             tank.position.x -= tank.rotation.cos() * move_speed;
                                             tank.position.y -= tank.rotation.sin() * move_speed;
                                         }
-                                        
                                         // Turret rotation (Arrow keys)
-                                        if input.arrow_left {
+                                        if input_decoded.arrow_left {
                                             tank.turret_rotation -= turret_speed;
                                         }
-                                        if input.arrow_right {
+                                        if input_decoded.arrow_right {
                                             tank.turret_rotation += turret_speed;
                                         }
-                                        
                                         // Firing (Space key)
-                                        if input.space {
+                                        if input_decoded.space {
                                             let current_time = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as u64;
                                             let fire_cooldown = 500; // 500ms between shots (2 shots per second)
-                                            
                                             if current_time - tank.last_fire_time >= fire_cooldown {
                                                 println!("Player {} fired!", tank.id);
                                                 tank.last_fire_time = current_time;
-                                                
                                                 // Create bullet
                                                 let bullet_speed = 8.0;
                                                 let total_rotation = tank.rotation + tank.turret_rotation;
-                                                let bullet_start_distance = 30.0; // Start bullet at turret tip
-                                                
+                                                let barrel_length = 40.0;
+                                                println!("Firing: tank.rotation={:.3}, tank.turret_rotation={:.3}, total_rotation={:.3}", 
+                                                    tank.rotation, tank.turret_rotation, total_rotation);
                                                 let bullet = Bullet {
                                                     id: format!("bullet_{}_{}", tank.id, current_time),
                                                     position: Position {
-                                                        x: tank.position.x + total_rotation.cos() * bullet_start_distance,
-                                                        y: tank.position.y + total_rotation.sin() * bullet_start_distance,
+                                                        x: tank.position.x + total_rotation.cos() * barrel_length,
+                                                        y: tank.position.y + total_rotation.sin() * barrel_length,
                                                     },
                                                     velocity: Velocity {
                                                         x: total_rotation.cos() * bullet_speed,
@@ -392,7 +354,6 @@ async fn handle_websocket_connection(ws_stream: tokio_tungstenite::WebSocketStre
                                                     owner_id: tank.id.clone(),
                                                     created_at: current_time,
                                                 };
-                                                
                                                 // Add bullet to game state
                                                 {
                                                     let mut bullets_guard = bullets.write().await;
@@ -402,9 +363,12 @@ async fn handle_websocket_connection(ws_stream: tokio_tungstenite::WebSocketStre
                                         }
                                     }
                                 }
+                                // Note: Game state will be broadcast by the main game loop
                             }
-                            // Note: Game state will be broadcast by the main game loop
-                        }
+                        } 
+                    }
+                    Err(e) => {
+                        println!("Deserialization error: {:?}", e);
                     }
                 }
             }
@@ -605,19 +569,20 @@ mod tests {
             d: false,
             arrow_left: true,
             arrow_right: false,
+            arrow_up: false,
+            arrow_down: false,
             space: true,
         };
-        
-        let serialized = serde_json::to_string(&input).unwrap();
-        let deserialized: PlayerInput = serde_json::from_str(&serialized).unwrap();
-        
-        assert!(deserialized.w);
-        assert!(!deserialized.a);
-        assert!(deserialized.s);
-        assert!(!deserialized.d);
-        assert!(deserialized.arrow_left);
-        assert!(!deserialized.arrow_right);
-        assert!(deserialized.space);
+        // No serialization/deserialization test needed for PlayerInput anymore
+        assert!(input.w);
+        assert!(!input.a);
+        assert!(input.s);
+        assert!(!input.d);
+        assert!(input.arrow_left);
+        assert!(!input.arrow_right);
+        assert!(!input.arrow_up);
+        assert!(!input.arrow_down);
+        assert!(input.space);
     }
 }
 

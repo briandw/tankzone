@@ -1,5 +1,5 @@
 [package]
-name = "battletanks"
+name = "battlexone"
 version = "0.1.0"
 edition = "2021"
 
@@ -14,5 +14,27 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 futures-util = "0.3"
 rand = "0.8"
 
+# Bevy dependencies for native client
+bevy = { version = "0.14", features = ["default"] }
+
 [dev-dependencies]
-tokio-test = "0.4" 
+tokio-test = "0.4"
+
+# Server binary
+[[bin]]
+name = "server"
+path = "src/main.rs"
+
+# Native Bevy client binary
+[[bin]]
+name = "client"
+path = "src/client.rs"
+
+[lib]
+name = "battlexone_shared"
+path = "src/lib.rs"
+
+# Cargo aliases for convenience
+[alias]
+game = "run --bin client"
+serve = "run --bin server" 

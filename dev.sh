@@ -35,8 +35,8 @@ case "$1" in
         cargo clean
         ;;
     "stop")
-        echo "🛑 Stopping all battletanks processes..."
-        pkill -f battletanks
+        echo "🛑 Stopping all battlexone processes..."
+        pkill -f battlexone
         echo "✅ Stopped"
         ;;
     "install-tools")

@@ -44,6 +44,29 @@
     </div>
 
     <script>
+        const KEY_BIT = {
+            'KeyW': 0,
+            'KeyA': 1,
+            'KeyS': 2,
+            'KeyD': 3,
+            'ArrowLeft': 4,
+            'ArrowRight': 5,
+            'ArrowUp': 6,
+            'ArrowDown': 7,
+            'Space': 8,
+            // add more as needed
+        };
+
+        function encodeKeys(keys) {
+            let bitfield = 0;
+            for (const [code, bit] of Object.entries(KEY_BIT)) {
+                if (keys[code]) {
+                    bitfield |= (1 << bit);
+                }
+            }
+            return bitfield;
+        }
+
         class TankGame {
             constructor() {
                 this.canvas = document.getElementById('gameCanvas');
@@ -61,6 +84,7 @@
                 
                 this.setupInput();
                 this.connect();
+                this.startInputPump();
                 this.gameLoop();
             }
             
@@ -81,6 +105,8 @@
                 return newUserId;
             }
             
+            
+
             generateUserId() {
                 // Generate a simple UUID-like string with window identifier
                 const windowId = Math.random().toString(36).substr(2, 6);
@@ -115,7 +141,6 @@
                 
                 this.ws.onmessage = (event) => {
                     const message = JSON.parse(event.data);
-                    console.log('Received:', message);
                     
                     if (message.type === 'joined') {
                         this.playerId = message.player_id;
@@ -143,38 +168,27 @@
             setupInput() {
                 document.addEventListener('keydown', (e) => {
                     this.keys[e.code] = true;
-                    this.sendInput();
+                    console.log(this.keys);
                     e.preventDefault(); // Prevent default browser behavior
                 });
                 
                 document.addEventListener('keyup', (e) => {
-                    this.keys[e.code] = false;
-                    this.sendInput();
+                    delete this.keys[e.code] //remove the key from the object
                     e.preventDefault(); // Prevent default browser behavior
                 });
             }
-            
-            sendInput() {
-                if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-                    const input = {
-                        // WASD for tank movement
-                        w: this.keys['KeyW'] || false,
-                        a: this.keys['KeyA'] || false,
-                        s: this.keys['KeyS'] || false,
-                        d: this.keys['KeyD'] || false,
-                        // Arrow keys for turret
-                        arrow_left: this.keys['ArrowLeft'] || false,
-                        arrow_right: this.keys['ArrowRight'] || false,
-                        // Space for firing
-                        space: this.keys['Space'] || false
-                    };
-                    
-                    this.ws.send(JSON.stringify({
-                        type: 'input',
-                        ...input
-                    }));
-                }
+
+            startInputPump() {
+                const send = () => {
+                    if (this.ws?.readyState === WebSocket.OPEN) {
+                        const input = encodeKeys(this.keys);
+                        this.ws.send(JSON.stringify({ type: "input", input }));
+                    }
+                    setTimeout(send, 1000 / 60);
+                };
+                send();
             }
+            
             
             updateCamera() {
                 // Center camera on player tank
@@ -310,7 +324,7 @@
         
         // Start the game when page loads
         window.addEventListener('load', () => {
-            new TankGame();
+            const game = new TankGame();
         });
     </script>
 </body>
