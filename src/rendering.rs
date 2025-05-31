@@ -268,8 +268,8 @@ pub fn update_camera(
     // Find the player's tank
     if let Some(player_id) = current_player_id {
         if let Some(player_tank) = tanks.iter().find(|t| t.id == player_id) {
-            // Calculate total rotation (tank body + turret)
-            let total_rotation = player_tank.rotation + player_tank.turret_rotation;
+            // Use only the turret's rotation for camera calculations
+            let total_rotation = player_tank.turret_rotation;
             
             // Calculate camera position based on total rotation
             let camera_distance = 150.0;
