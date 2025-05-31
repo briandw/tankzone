@@ -10,6 +10,8 @@ use rand::Rng;
 
 const NUM_NPCS: usize = 5;
 const NPC_SPAWN_RADIUS: f32 = 500.0;
+const BULLET_LIFETIME: u64 = 5000; // 5 seconds
+const WORLD_BOUNDS: f32 = 1000.0;
 
 struct GameServer {
     players: Arc<Mutex<HashMap<String, Player>>>,
@@ -64,6 +66,49 @@ impl GameServer {
         }
     }
 
+    fn update_bullets(&self) {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64;
+        
+        let mut bullets = self.bullets.lock().unwrap();
+        
+        // Update bullet positions and remove old bullets
+        bullets.retain_mut(|bullet| {
+            // Check if bullet is too old
+            if now - bullet.created_at > BULLET_LIFETIME {
+                return false;
+            }
+            
+            // Update position
+            bullet.position.x += bullet.velocity.x;
+            bullet.position.y += bullet.velocity.y;
+            
+            // Check if bullet is out of bounds
+            if bullet.position.x.abs() > WORLD_BOUNDS || bullet.position.y.abs() > WORLD_BOUNDS {
+                return false;
+            }
+            
+            // Check for collisions with tanks
+            let tanks = self.tanks.lock().unwrap();
+            for tank in tanks.iter() {
+                if tank.id != bullet.owner_id { // Don't hit yourself
+                    let dx = bullet.position.x - tank.position.x;
+                    let dy = bullet.position.y - tank.position.y;
+                    let distance = (dx * dx + dy * dy).sqrt();
+                    
+                    if distance < 30.0 { // Tank hitbox radius
+                        // TODO: Handle tank damage
+                        return false;
+                    }
+                }
+            }
+            
+            true
+        });
+    }
+
     fn update_npcs(&self) {
         let mut rng = rand::thread_rng();
         let mut tanks = self.tanks.lock().unwrap();
@@ -92,6 +137,10 @@ impl GameServer {
                     tank.rotation = target_angle;
                     tank.position.x += target_angle.cos() * speed;
                     tank.position.y += target_angle.sin() * speed;
+                    
+                    // Keep tanks within bounds
+                    tank.position.x = tank.position.x.clamp(-WORLD_BOUNDS, WORLD_BOUNDS);
+                    tank.position.y = tank.position.y.clamp(-WORLD_BOUNDS, WORLD_BOUNDS);
                     
                     // Randomly rotate turret
                     if rng.gen_bool(0.1) {
@@ -131,7 +180,8 @@ impl GameServer {
     }
 
     async fn broadcast_game_state(&self) {
-        // Update NPCs before broadcasting
+        // Update game state
+        self.update_bullets();
         self.update_npcs();
         
         let game_state = {
