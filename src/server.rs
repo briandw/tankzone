@@ -91,18 +91,37 @@ impl GameServer {
             }
             
             // Check for collisions with tanks
-            let tanks = self.tanks.lock().unwrap();
-            for tank in tanks.iter() {
-                if tank.id != bullet.owner_id { // Don't hit yourself
+            let mut tanks = self.tanks.lock().unwrap(); // Make tanks mutable
+            let mut collided = false; // Flag to track if bullet collided
+            for tank in tanks.iter_mut() { // Iterate mutably
+                // Diagnostic print
+                // println!("Checking bullet {} (pos: {:.2},{:.2}) against tank {} (pos: {:.2},{:.2}, dead: {})", 
+                //     bullet.id, bullet.position.x, bullet.position.y, 
+                //     tank.id, tank.position.x, tank.position.y, tank.is_dead);
+
+                if tank.id != bullet.owner_id && !tank.is_dead { // Don't hit yourself or already dead tanks
                     let dx = bullet.position.x - tank.position.x;
                     let dy = bullet.position.y - tank.position.y;
                     let distance = (dx * dx + dy * dy).sqrt();
                     
+                    // More diagnostic print
+                    // if distance < 100.0 { // Print if a bullet is even somewhat close
+                    //     println!("Bullet {} is {} units from tank {}. Owner: {}, Tank Dead: {}", 
+                    //         bullet.id, distance, tank.id, bullet.owner_id, tank.is_dead);
+                    // }
+
                     if distance < 30.0 { // Tank hitbox radius
-                        // TODO: Handle tank damage
-                        return false;
+                        println!("Tank {} hit by bullet {}", tank.id, bullet.id);
+                        tank.is_dead = true; // One-hit kill
+                        // tank.health = 0; // Optional: if you keep health for score or other mechanics
+                        collided = true;
+                        break; // Bullet is consumed by one tank
                     }
                 }
+            }
+            
+            if collided {
+                return false; // Remove bullet if it collided
             }
             
             true
@@ -116,6 +135,11 @@ impl GameServer {
         
         for tank in tanks.iter_mut() {
             if !tank.is_player {
+                // If NPC is dead, skip all logic for it
+                if tank.is_dead {
+                    continue;
+                }
+
                 let (target_x, target_y) = npc_targets.get(&tank.id).unwrap_or(&(0.0, 0.0));
                 
                 // Calculate direction to target
@@ -205,6 +229,11 @@ impl GameServer {
     fn handle_input(&self, player_id: &str, input: u16) {
         let mut tanks = self.tanks.lock().unwrap();
         if let Some(tank) = tanks.iter_mut().find(|t| t.id == player_id) {
+            // If player's tank is dead, ignore input
+            if tank.is_dead {
+                return;
+            }
+
             // Update tank position based on input
             let speed = 5.0;
             let rotation_speed = 0.1;

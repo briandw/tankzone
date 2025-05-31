@@ -99,6 +99,21 @@ pub fn update_game_entities(
     
     // Update or create tanks
     for tank in &tanks {
+        // Skip rendering or updating dead tanks for now
+        if tank.is_dead {
+            // Optional: If we want to ensure they are cleaned up if they were previously alive
+            if let Some(entity) = existing_tanks.get(&tank.id) {
+                commands.entity(*entity).despawn_recursive();
+            }
+            if let Some(entity) = existing_turrets.get(&tank.id) {
+                commands.entity(*entity).despawn_recursive();
+            }
+            if let Some(entity) = existing_indicators.get(&tank.id) {
+                commands.entity(*entity).despawn_recursive();
+            }
+            continue; // Move to the next tank
+        }
+
         let color = if tank.is_player && current_player_id.as_ref() == Some(&tank.id) {
             Color::srgb(0.2, 0.6, 1.0) // Blue for player
         } else if tank.is_player {
