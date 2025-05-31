@@ -503,15 +503,29 @@ fn update_camera(
     // Find the player's tank
     if let Some(player_id) = current_player_id {
         if let Some(player_tank) = tanks.iter().find(|t| t.id == player_id) {
+            // Calculate total rotation (tank body + turret)
+            let total_rotation = player_tank.rotation + player_tank.turret_rotation;
+            
+            // Calculate camera position based on total rotation
+            let camera_distance = 150.0;
+            let camera_height = 80.0;
+            
+            // Calculate camera position using trigonometry
+            let camera_x = player_tank.position.x - total_rotation.cos() * camera_distance;
+            let camera_z = player_tank.position.y - total_rotation.sin() * camera_distance;
+            
             // Update camera position to follow player tank
             if let Ok(mut camera_transform) = camera_query.get_single_mut() {
                 camera_transform.translation = Vec3::new(
-                    player_tank.position.x,
-                    80.0, // Keep the same height
-                    player_tank.position.y + 100.0, // Keep the same distance behind
+                    camera_x,
+                    camera_height,
+                    camera_z,
                 );
+                
+                // Look at a point slightly above the tank for a 5-degree upward angle
+                let look_at_height = 30.0; // Height of the look-at point above the tank
                 camera_transform.look_at(
-                    Vec3::new(player_tank.position.x, 0.0, player_tank.position.y),
+                    Vec3::new(player_tank.position.x, look_at_height, player_tank.position.y),
                     Vec3::Y,
                 );
             }
