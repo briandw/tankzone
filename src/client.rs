@@ -14,6 +14,9 @@ use battlexone_shared::*;
 mod tank_model;
 use tank_model::{TankModel, TankEntity, TankTurret, spawn_tank};
 
+mod network;
+use network::{ConnectionState, WebSocketSender, setup_network};
+
 #[derive(Resource)]
 struct GameStateResource {
     data: Arc<Mutex<(Vec<Tank>, Vec<Bullet>)>>,
@@ -28,16 +31,6 @@ struct PlayerInfo {
 #[derive(Resource)]
 struct InputState {
     keys: HashMap<String, bool>,
-}
-
-#[derive(Resource)]
-struct ConnectionState {
-    connected: Arc<Mutex<bool>>,
-}
-
-#[derive(Resource)]
-struct WebSocketSender {
-    sender: Arc<Mutex<Option<mpsc::UnboundedSender<String>>>>,
 }
 
 #[derive(Component)]
@@ -131,84 +124,14 @@ fn setup(
         brightness: 500.0,
     });
     
-    // Start WebSocket connection in background thread
-    let game_data = game_state.data.clone();
-    let player_id = player_info.player_id.clone();
-    let user_id = player_info.user_id.clone();
-    let connected = connection_state.connected.clone();
-    let sender_resource = ws_sender.sender.clone();
-    
-    thread::spawn(move || {
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        rt.block_on(async {
-            println!("Connecting to WebSocket server...");
-            
-            match connect_async("ws://127.0.0.1:3001").await {
-                Ok((ws_stream, _)) => {
-                    println!("Connected to server!");
-                    *connected.lock().unwrap() = true;
-                    let (mut ws_sender, mut ws_receiver) = ws_stream.split();
-                    
-                    // Create a channel for sending messages from the main thread
-                    let (tx, mut rx) = mpsc::unbounded_channel();
-                    *sender_resource.lock().unwrap() = Some(tx);
-                    
-                    // Send join message
-                    let join_msg = ClientMessage::Join {
-                        name: "Bevy Player".to_string(),
-                        user_id: Some(user_id),
-                    };
-                    
-                    if let Ok(msg_str) = serde_json::to_string(&join_msg) {
-                        let _ = ws_sender.send(Message::Text(msg_str)).await;
-                    }
-                    
-                    // Spawn task to handle outgoing messages
-                    tokio::spawn(async move {
-                        while let Some(message) = rx.recv().await {
-                            if ws_sender.send(Message::Text(message)).await.is_err() {
-                                break;
-                            }
-                        }
-                    });
-                    
-                    // Listen for messages from server
-                    while let Some(msg) = ws_receiver.next().await {
-                        match msg {
-                            Ok(Message::Text(text)) => {
-                                if let Ok(server_msg) = serde_json::from_str::<ServerMessage>(&text) {
-                                    match server_msg {
-                                        ServerMessage::Joined { player_id: p_id, user_id: _ } => {
-                                            println!("Joined game with player_id: {}", p_id);
-                                            *player_id.lock().unwrap() = Some(p_id);
-                                        }
-                                        ServerMessage::GameState(game_state) => {
-                                            let mut data = game_data.lock().unwrap();
-                                            *data = (game_state.tanks, game_state.bullets);
-                                        }
-                                    }
-                                }
-                            }
-                            Ok(Message::Close(_)) => {
-                                println!("Server closed connection");
-                                *connected.lock().unwrap() = false;
-                                break;
-                            }
-                            Err(e) => {
-                                eprintln!("WebSocket error: {}", e);
-                                *connected.lock().unwrap() = false;
-                                break;
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-                Err(e) => {
-                    eprintln!("Failed to connect to server: {}", e);
-                }
-            }
-        });
-    });
+    // Start WebSocket connection
+    setup_network(
+        game_state.data.clone(),
+        player_info.player_id.clone(),
+        player_info.user_id.clone(),
+        connection_state.connected.clone(),
+        ws_sender.sender.clone(),
+    );
 }
 
 fn handle_input(
