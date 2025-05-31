@@ -11,6 +11,9 @@ use tokio::sync::mpsc;
 // Use shared types
 use battlexone_shared::*;
 
+mod tank_model;
+use tank_model::{TankModel, TankEntity, TankTurret, spawn_tank};
+
 #[derive(Resource)]
 struct GameStateResource {
     data: Arc<Mutex<(Vec<Tank>, Vec<Bullet>)>>,
@@ -35,21 +38,6 @@ struct ConnectionState {
 #[derive(Resource)]
 struct WebSocketSender {
     sender: Arc<Mutex<Option<mpsc::UnboundedSender<String>>>>,
-}
-
-#[derive(Resource)]
-struct TankModel {
-    scene: Handle<Scene>,
-}
-
-#[derive(Component)]
-struct TankEntity {
-    tank_id: String,
-}
-
-#[derive(Component)]
-struct TankTurret {
-    tank_id: String,
 }
 
 #[derive(Component)]
@@ -89,7 +77,8 @@ fn main() {
             sender: Arc::new(Mutex::new(None)),
         })
         .insert_resource(TankModel {
-            scene: Handle::default(),
+            body_scene: Handle::default(),
+            turret_scene: Handle::default(),
         })
         .add_systems(Startup, setup)
         .add_systems(Update, (
@@ -110,8 +99,9 @@ fn setup(
     asset_server: Res<AssetServer>,
     mut tank_model: ResMut<TankModel>,
 ) {
-    // Try to load tank model (but we'll use fallback shapes)
-    tank_model.scene = asset_server.load("tank.glb#Scene0");
+    // Load tank models
+    tank_model.body_scene = asset_server.load("tank_body.glb#Scene0");
+    tank_model.turret_scene = asset_server.load("turret.glb#Scene0");
     
     // Setup 3D camera positioned for better tank viewing
     commands.spawn(Camera3dBundle {
@@ -276,7 +266,7 @@ fn update_game_entities(
     mut indicator_query: Query<(Entity, &mut Transform, &PlayerIndicator), (Without<TankEntity>, Without<BulletEntity>, Without<TankTurret>)>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    _tank_model: Res<TankModel>,
+    tank_model: Res<TankModel>,
 ) {
     // Get current game state
     let (tanks, bullets) = {
@@ -320,80 +310,29 @@ fn update_game_entities(
             Color::srgb(1.0, 0.2, 0.2) // Red for NPCs
         };
         
-        let tank_transform = Transform::from_xyz(tank.position.x, 0.0, tank.position.y)
-            .with_rotation(Quat::from_rotation_y(-tank.rotation))
-            .with_scale(Vec3::splat(10.0));
-            
         if let Some(entity) = existing_tanks.get(&tank.id) {
             // Update existing tank body
             if let Ok((_, mut transform, _)) = tank_query.get_mut(*entity) {
-                *transform = tank_transform;
+                transform.translation = Vec3::new(tank.position.x, 0.0, tank.position.y);
+                transform.rotation = Quat::from_rotation_y(-tank.rotation);
             }
             
             // Update existing turret rotation
             if let Some(turret_entity) = existing_turrets.get(&tank.id) {
                 if let Ok((_, mut turret_transform, _)) = turret_query.get_mut(*turret_entity) {
-                    // Invert turret rotation to match inverted tank body
                     turret_transform.rotation = Quat::from_rotation_y(-tank.turret_rotation);
                 }
             }
         } else {
-            // Create new tank with proper tank shape using primitives
-            let tank_body = commands.spawn((
-                PbrBundle {
-                    mesh: meshes.add(Cuboid::new(6.0, 2.0, 4.0)), // Tank body (longer than wide)
-                    material: materials.add(StandardMaterial {
-                        base_color: color,
-                        metallic: 0.8,
-                        perceptual_roughness: 0.3,
-                        ..default()
-                    }),
-                    transform: tank_transform,
-                    ..default()
-                },
-                TankEntity {
-                    tank_id: tank.id.clone(),
-                },
-            )).id();
-            
-            // Tank turret (smaller box on top) - child of body, so it inherits tank body rotation
-            let turret = commands.spawn((
-                PbrBundle {
-                    mesh: meshes.add(Cuboid::new(3.0, 1.5, 3.0)),
-                    material: materials.add(StandardMaterial {
-                        base_color: color,
-                        metallic: 0.7,
-                        perceptual_roughness: 0.4,
-                        ..default()
-                    }),
-                    // Only apply turret_rotation since tank body rotation is inherited from parent
-                    transform: Transform::from_xyz(0.0, 1.8, 0.0)
-                        .with_rotation(Quat::from_rotation_y(-tank.turret_rotation)),
-                    ..default()
-                },
-                TankTurret {
-                    tank_id: tank.id.clone(),
-                },
-            )).id();
-            
-            // Tank barrel (cylinder) - child of turret, simple forward positioning
-            let barrel = commands.spawn(PbrBundle {
-                mesh: meshes.add(Cylinder::new(0.3, 4.0)),
-                material: materials.add(StandardMaterial {
-                    base_color: Color::srgb(0.4, 0.4, 0.4),
-                    metallic: 0.9,
-                    perceptual_roughness: 0.2,
-                    ..default()
-                }),
-                // Position forward and rotate cylinder to point horizontally forward
-                transform: Transform::from_xyz(2.0, 0.0, 0.0)
-                    .with_rotation(Quat::from_rotation_z(std::f32::consts::FRAC_PI_2)),
-                ..default()
-            }).id();
-            
-            // Set up parent-child relationships
-            commands.entity(tank_body).push_children(&[turret]);
-            commands.entity(turret).push_children(&[barrel]);
+            // Create new tank with 3D model
+            spawn_tank(
+                &mut commands,
+                &tank_model,
+                Vec3::new(tank.position.x, 0.0, tank.position.y),
+                tank.rotation,
+                tank.turret_rotation,
+                color,
+            );
         }
         
         // Update or create player indicator (smaller sphere above for extra visibility)
