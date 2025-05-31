@@ -23,7 +23,7 @@ tokio-test = "0.4"
 # Server binary
 [[bin]]
 name = "server"
-path = "src/main.rs"
+path = "src/server.rs"
 
 # Native Bevy client binary
 [[bin]]
