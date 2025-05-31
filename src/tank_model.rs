@@ -23,13 +23,13 @@ pub fn spawn_tank(
     rotation: f32,
     turret_rotation: f32,
     color: Color,
-) -> Entity {
-    // Spawn tank body
+) -> (Entity, Entity) {
+    // Spawn tank body with 90-degree offset to correct orientation
     let body = commands.spawn((
         SceneBundle {
             scene: tank_model.body_scene.clone(),
             transform: Transform::from_xyz(position.x, position.y, position.z)
-                .with_rotation(Quat::from_rotation_y(-rotation))
+                .with_rotation(Quat::from_rotation_y(-rotation + std::f32::consts::FRAC_PI_2))
                 .with_scale(Vec3::splat(5.0)),
             ..default()
         },
@@ -38,12 +38,12 @@ pub fn spawn_tank(
         },
     )).id();
 
-    // Spawn turret as child of body
+    // Spawn turret as a separate entity (not a child of the body)
     let turret = commands.spawn((
         SceneBundle {
             scene: tank_model.turret_scene.clone(),
-            transform: Transform::from_xyz(0.0, 0.0, 0.0)
-                .with_rotation(Quat::from_rotation_y(-turret_rotation))
+            transform: Transform::from_xyz(position.x, position.y, position.z)
+                .with_rotation(Quat::from_rotation_y(-turret_rotation + std::f32::consts::FRAC_PI_2))
                 .with_scale(Vec3::splat(5.0)),
             ..default()
         },
@@ -52,10 +52,7 @@ pub fn spawn_tank(
         },
     )).id();
 
-    // Set up parent-child relationship
-    commands.entity(body).push_children(&[turret]);
-
-    body
+    (body, turret)
 }
 
 pub fn load_tank_model(
@@ -66,14 +63,4 @@ pub fn load_tank_model(
     // Load both tank models
     tank_model.body_scene = asset_server.load("tank_body.glb#Scene0");
     tank_model.turret_scene = asset_server.load("turret.glb#Scene0");
-    
-    // Spawn a test tank
-    spawn_tank(
-        commands,
-        &tank_model,
-        Vec3::ZERO,
-        0.0,
-        0.0,
-        Color::WHITE,
-    );
 } 

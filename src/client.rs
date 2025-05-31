@@ -314,18 +314,21 @@ fn update_game_entities(
             // Update existing tank body
             if let Ok((_, mut transform, _)) = tank_query.get_mut(*entity) {
                 transform.translation = Vec3::new(tank.position.x, 0.0, tank.position.y);
-                transform.rotation = Quat::from_rotation_y(-tank.rotation);
+                transform.rotation = Quat::from_rotation_y(-tank.rotation + std::f32::consts::FRAC_PI_2);
             }
             
-            // Update existing turret rotation
+            // Update existing turret rotation and position
             if let Some(turret_entity) = existing_turrets.get(&tank.id) {
                 if let Ok((_, mut turret_transform, _)) = turret_query.get_mut(*turret_entity) {
-                    turret_transform.rotation = Quat::from_rotation_y(-tank.turret_rotation);
+                    // Update turret position to match body
+                    turret_transform.translation = Vec3::new(tank.position.x, 0.0, tank.position.y);
+                    // Set turret rotation independently
+                    turret_transform.rotation = Quat::from_rotation_y(-tank.turret_rotation + std::f32::consts::FRAC_PI_2);
                 }
             }
         } else {
             // Create new tank with 3D model
-            spawn_tank(
+            let (body, turret) = spawn_tank(
                 &mut commands,
                 &tank_model,
                 Vec3::new(tank.position.x, 0.0, tank.position.y),
@@ -333,6 +336,10 @@ fn update_game_entities(
                 tank.turret_rotation,
                 color,
             );
+            
+            // Store the entities in our tracking maps
+            existing_tanks.insert(tank.id.clone(), body);
+            existing_turrets.insert(tank.id.clone(), turret);
         }
         
         // Update or create player indicator (smaller sphere above for extra visibility)
