@@ -180,10 +180,7 @@ impl GameServer {
     }
 
     async fn broadcast_game_state(&self) {
-        // Update game state
-        self.update_bullets();
-        self.update_npcs();
-        
+        // Clone the current state FIRST
         let game_state = {
             let tanks = self.tanks.lock().unwrap();
             let bullets = self.bullets.lock().unwrap();
@@ -193,6 +190,10 @@ impl GameServer {
             }
         };
 
+        // Then, update the canonical game state for the next tick
+        self.update_bullets();
+        self.update_npcs();
+        
         if let Ok(msg_str) = serde_json::to_string(&ServerMessage::GameState(game_state)) {
             let connections = self.connections.lock().unwrap();
             for sender in connections.values() {
