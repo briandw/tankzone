@@ -7,6 +7,7 @@ use std::thread;
 use serde_json;
 
 use battlexone_shared::*;
+use crate::game_state::{GameStateResource, PlayerInfo};
 
 #[derive(Resource)]
 pub struct ConnectionState {
@@ -19,12 +20,15 @@ pub struct WebSocketSender {
 }
 
 pub fn setup_network(
-    game_data: Arc<Mutex<(Vec<Tank>, Vec<Bullet>)>>,
-    player_id: Arc<Mutex<Option<String>>>,
-    user_id: String,
+    game_state: Res<GameStateResource>,
+    player_info: Res<PlayerInfo>,
     connected: Arc<Mutex<bool>>,
     sender_resource: Arc<Mutex<Option<mpsc::UnboundedSender<String>>>>,
 ) {
+    let game_data = game_state.data.clone();
+    let player_id = player_info.player_id.clone();
+    let user_id = player_info.user_id.clone();
+    
     thread::spawn(move || {
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async {
@@ -69,9 +73,9 @@ pub fn setup_network(
                                             println!("Joined game with player_id: {}", p_id);
                                             *player_id.lock().unwrap() = Some(p_id);
                                         }
-                                        ServerMessage::GameState(game_state) => {
+                                        ServerMessage::GameState(state) => {
                                             let mut data = game_data.lock().unwrap();
-                                            *data = (game_state.tanks, game_state.bullets);
+                                            *data = (state.tanks, state.bullets);
                                         }
                                     }
                                 }
