@@ -96,6 +96,7 @@ fn main() {
             handle_input,
             send_input,
             update_game_entities,
+            update_camera,
         ))
         .run();
 }
@@ -479,6 +480,41 @@ fn update_game_entities(
     for (entity, _, bullet_entity) in bullet_query.iter() {
         if !current_bullet_ids.contains(&bullet_entity.bullet_id) {
             commands.entity(entity).despawn_recursive();
+        }
+    }
+}
+
+fn update_camera(
+    game_state: Res<GameStateResource>,
+    player_info: Res<PlayerInfo>,
+    mut camera_query: Query<&mut Transform, With<Camera3d>>,
+) {
+    let (tanks, _) = {
+        let data = game_state.data.lock().unwrap();
+        data.clone()
+    };
+    
+    if tanks.is_empty() {
+        return;
+    }
+    
+    let current_player_id = player_info.player_id.lock().unwrap().clone();
+    
+    // Find the player's tank
+    if let Some(player_id) = current_player_id {
+        if let Some(player_tank) = tanks.iter().find(|t| t.id == player_id) {
+            // Update camera position to follow player tank
+            if let Ok(mut camera_transform) = camera_query.get_single_mut() {
+                camera_transform.translation = Vec3::new(
+                    player_tank.position.x,
+                    80.0, // Keep the same height
+                    player_tank.position.y + 100.0, // Keep the same distance behind
+                );
+                camera_transform.look_at(
+                    Vec3::new(player_tank.position.x, 0.0, player_tank.position.y),
+                    Vec3::Y,
+                );
+            }
         }
     }
 } 
