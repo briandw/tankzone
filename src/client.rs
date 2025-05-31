@@ -51,13 +51,13 @@ fn main() {
 }
 
 fn setup(
-    mut commands: Commands,
+    commands: Commands,
     game_state: Res<GameStateResource>,
     player_info: Res<PlayerInfo>,
     connection_state: Res<ConnectionState>,
     ws_sender: Res<WebSocketSender>,
     asset_server: Res<AssetServer>,
-    mut tank_model: ResMut<TankModel>,
+    tank_model: ResMut<TankModel>,
 ) {
     // Setup rendering
     setup_rendering(commands, asset_server, tank_model);

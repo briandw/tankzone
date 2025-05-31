@@ -25,9 +25,10 @@ pub fn setup_network(
     connected: Arc<Mutex<bool>>,
     sender_resource: Arc<Mutex<Option<mpsc::UnboundedSender<String>>>>,
 ) {
-    let game_data = game_state.data.clone();
-    let player_id = player_info.player_id.clone();
-    let user_id = player_info.user_id.clone();
+    // Clone the resources we need in the thread
+    let game_data = game_state.get_data();
+    let player_id = player_info.get_player_id_arc();
+    let user_id = player_info.get_user_id_arc();
     
     thread::spawn(move || {
         let rt = tokio::runtime::Runtime::new().unwrap();
@@ -44,10 +45,13 @@ pub fn setup_network(
                     let (tx, mut rx) = mpsc::unbounded_channel();
                     *sender_resource.lock().unwrap() = Some(tx);
                     
+                    // Get the user_id value
+                    let user_id_value = user_id.lock().unwrap().clone();
+                    
                     // Send join message
                     let join_msg = ClientMessage::Join {
                         name: "Bevy Player".to_string(),
-                        user_id: Some(user_id),
+                        user_id: user_id_value,
                     };
                     
                     if let Ok(msg_str) = serde_json::to_string(&join_msg) {

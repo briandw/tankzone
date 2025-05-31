@@ -22,7 +22,7 @@ pub fn spawn_tank(
     position: Vec3,
     rotation: f32,
     turret_rotation: f32,
-    color: Color,
+    _color: Color,
 ) -> (Entity, Entity) {
     // Spawn tank body with 90-degree offset to correct orientation
     let body = commands.spawn((
@@ -53,14 +53,4 @@ pub fn spawn_tank(
     )).id();
 
     (body, turret)
-}
-
-pub fn load_tank_model(
-    commands: &mut Commands,
-    asset_server: Res<AssetServer>,
-    mut tank_model: ResMut<TankModel>,
-) {
-    // Load both tank models
-    tank_model.body_scene = asset_server.load("tank_body.glb#Scene0");
-    tank_model.turret_scene = asset_server.load("turret.glb#Scene0");
 } 

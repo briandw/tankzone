@@ -65,8 +65,9 @@ pub fn update_game_entities(
     tank_model: Res<TankModel>,
 ) {
     // Get current game state
+    let game_data = game_state.get_data();
     let (tanks, bullets) = {
-        let data = game_state.data.lock().unwrap();
+        let data = game_data.lock().unwrap();
         data.clone()
     };
     
@@ -252,8 +253,9 @@ pub fn update_camera(
     player_info: Res<PlayerInfo>,
     mut camera_query: Query<&mut Transform, With<Camera3d>>,
 ) {
+    let game_data = game_state.get_data();
     let (tanks, _) = {
-        let data = game_state.data.lock().unwrap();
+        let data = game_data.lock().unwrap();
         data.clone()
     };
     
